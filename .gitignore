@@ -1,0 +1,6 @@
+checkpoints/*.pth
+checkpoints/*.ckpt
+results/
+__pycache__/
+*.pyc
+*.npy
