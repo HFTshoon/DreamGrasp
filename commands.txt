@@ -1,0 +1,16 @@
+s5cmd --no-sign-request cp s3://megascenes/nvs_checkpoints/splits/* DreamGrasp/imggen/megascenes/data/splits/
+s5cmd --no-sign-request cp s3://megascenes/nvs_checkpoints/warp_plus_pose/iter_112000/* DreamGrasp/imggen/megascenes/configs/warp_plus_pose/iter_112000/
+
+mkdir imggen/megascenes/configs/zeronvs_original/iter_0
+cd imggen/megascenes/configs/zeronvs_original/iter_0
+gdown --id 17WEMfs2HABJcdf4JmuIM3ti0uz37lSZg
+cd cd ../../../../../
+
+mkdir checkpoints
+cd checkpoints
+wget https://download.europe.naverlabs.com/ComputerVision/DUSt3R/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth
+wget https://download.europe.naverlabs.com/ComputerVision/MASt3R/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth
+cd ../
+
+CUDA_VISIBLE_DEVICES=3 python -m imggen.preprocess.preprocess_co3dv2 --output_dir /mydata/data/seunghoonjeong/co3dv2_apple_preprocess --co3d_dir /mydata/data/seunghoonjeong/co3dv2_apple --category apple
+CUDA_VISIBLE_DEVICES=3 accelerate launch --config_file acc_configs/1.yaml train.py -e configs/warp_plus_pose/ -b 1 -w 4

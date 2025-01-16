@@ -19,7 +19,7 @@ test-tube>=0.7.5
 streamlit>=0.73.1
 einops
 torch-fidelity==0.3.0
-transformers==4.48.2
+transformers==4.48.0
 kornia==0.6
 webdataset==0.2.5
 torchmetrics
@@ -46,3 +46,7 @@ pyglet<2
 pyrender
 roma
 lpips
+
+# for checkpoints download
+s5cmd
+gdown
