@@ -12,3 +12,6 @@ __pycache__/
 *.bin
 *.pkl
 
+iteration.txt
+testing_log/
+quant_eval/
