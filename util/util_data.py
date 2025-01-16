@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from util.util_pose import generate_smooth_camera_path
 from util.extrinsic2pyramid.util.camera_pose_visualizer import CameraPoseVisualizer
 
-def get_inputs(input_dir):
+def get_inputs(input_dir, device):
     extrinsics = None
     intrinsics = None
     trajectory = None
@@ -38,6 +38,7 @@ def get_inputs(input_dir):
     # Resize to (2, 512, 512, 3)
     images = torch.nn.functional.interpolate(images.permute(0,3,1,2), size=(512, 512), mode='bilinear', align_corners=False)
     images = images.permute(0,2,3,1)
+    images = images.to(device)
 
     # Load extrinsics, intrinsics, and trajectory
     if os.path.exists(os.path.join(input_dir, "extrinsics.json")):
@@ -46,7 +47,7 @@ def get_inputs(input_dir):
 
         assert len(data_extrinsics["extrinsics"]) == len(image_paths), f"Number of extrinsics {len(data_extrinsics['extrinsics'])} does not match the number of images {len(image_paths)}."
 
-        extrinsics = torch.tensor(data_extrinsics["extrinsics"]).float()
+        extrinsics = torch.tensor(data_extrinsics["extrinsics"]).float().to(device)
         
 
     if os.path.exists(os.path.join(input_dir, "intrinsics.json")):
@@ -58,14 +59,14 @@ def get_inputs(input_dir):
         
         intrinsics = {
             "focals": data_intrinsics["focals"],
-            "principal_points": torch.tensor(data_intrinsics["principal_points"]).float()
+            "principal_points": torch.tensor(data_intrinsics["principal_points"]).float().to(device)
         }
 
     if os.path.exists(os.path.join(input_dir, "trajectory.json")):
         with open(os.path.join(input_dir, "trajectory.json"), "r") as f:
             data_trajectory = json.load(f)
 
-        trajectory = torch.tensor(data_trajectory["trajectory"]).float()
+        trajectory = torch.tensor(data_trajectory["trajectory"]).float().to(device)
         reference = data_trajectory["reference"]
 
         if extrinsics is not None:
@@ -93,7 +94,6 @@ def get_inputs(input_dir):
             }
             with open(os.path.join(input_dir, "extrinsics.json"), "w") as f:
                 json.dump(data_extrinsics, f)
-            
 
     return image_paths, images, extrinsics, intrinsics, trajectory, reference
 

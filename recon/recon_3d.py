@@ -11,7 +11,7 @@ from dust3r.utils.image import load_images
 from dust3r.image_pairs import make_pairs
 from dust3r.cloud_opt import global_aligner, GlobalAlignerMode
 
-def load_recon_model(use_mast3r):
+def load_recon_model(use_mast3r, device):
     if use_mast3r:
         from mast3r.model import AsymmetricMASt3R as ReconModel
         model_path = "checkpoints/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth"
@@ -19,11 +19,11 @@ def load_recon_model(use_mast3r):
         from dust3r.model import AsymmetricCroCo3DStereo as ReconModel
         model_path = "checkpoints/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth"
 
-    model = ReconModel.from_pretrained(model_path).to("cuda")
+    model = ReconModel.from_pretrained(model_path).to(device)
     return model
 
-def recon_3d_init(recon_model, image_paths, extrinsics, intrinsics, input_dir, output_dir, use_mast3r):
-    os.path.makedirs(os.path.join(output_dir, "recon"), exist_ok=True)
+def recon_3d_init(recon_model, device, image_paths, extrinsics, intrinsics, input_dir, output_dir, use_mast3r):
+    os.makedirs(os.path.join(output_dir, "recon"), exist_ok=True)
 
     image_cnt = len(image_paths)
     if extrinsics is not None and intrinsics is not None:
@@ -38,9 +38,9 @@ def recon_3d_init(recon_model, image_paths, extrinsics, intrinsics, input_dir, o
 
     images = load_images(image_paths, size=512, square_ok=True)
     pairs = make_pairs(images, scene_graph='complete', prefilter=None, symmetrize=True)
-    output = inference(pairs, recon_model, "cuda", batch_size=1)
+    output = inference(pairs, recon_model, device, batch_size=1)
 
-    scene = global_aligner(output, device="cuda", mode=GlobalAlignerMode.PointCloudOptimizer)
+    scene = global_aligner(output, device=device, mode=GlobalAlignerMode.PointCloudOptimizer)
     if use_mast3r:
         scene.min_conf_thr = 1.5
 
@@ -53,7 +53,7 @@ def recon_3d_init(recon_model, image_paths, extrinsics, intrinsics, input_dir, o
     else:
         scene.preset_principal_point_zero()
 
-    loss = scene.compute_global_alignment(init="mst", niter=300, schedule="cosine", lr=0.01)
+    loss = scene.compute_global_alignment(init="known_poses", niter=300, schedule="cosine", lr=0.01)
     
     # (H,W) = (512, 512) if square_ok=True, (384, 512) if square_ok=False
     pts3d = scene.get_pts3d()               # B X (H, W, 3)
