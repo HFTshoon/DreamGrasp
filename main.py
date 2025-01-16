@@ -1,11 +1,15 @@
 import os
 import argparse
 
+import torch
+
+from recon.recon_3d import recon_3d_init, load_recon_model
+from imggen.gen_genwarp import generate_images, choose_idx_to_generate, load_gen_model
+from util.seq_info import SeqInfo
 from util.util_data import get_inputs, get_trajectory, visualize_pose
 from util.util_warp import warp_reference
-from recon.recon_3d import recon_3d_init, load_recon_model
 
-def main(args):
+def main(args, device):
     if args.input_dir is None:
         args.input_dir = f"assets/{args.exp_name}"
 
@@ -17,26 +21,31 @@ def main(args):
     print(f"Input directory: {args.input_dir}")
     print(f"Output directory: {args.output_dir}")
 
-    recon_model = load_recon_model(args.use_mast3r)
+    recon_model = load_recon_model(args.use_mast3r, device)
 
-    image_paths, images, extrinsics, intrinsics, trajectory, reference = get_inputs(args.input_dir)
+    gen_model = load_gen_model(device)
 
-    extrinsics, intrinsics = recon_3d_init(recon_model, image_paths, extrinsics, intrinsics, args.input_dir, args.output_dir, args.use_mast3r)
+    image_paths, images, extrinsics, intrinsics, trajectory, reference = get_inputs(args.input_dir, device)
+
+    extrinsics, intrinsics = recon_3d_init(recon_model, device, image_paths, extrinsics, intrinsics, args.input_dir, args.output_dir, args.use_mast3r)
     
     if trajectory is None:
         print("Trajectory does not exist. Will generate a smooth camera path.")
         trajectory, reference = get_trajectory(extrinsics, args.input_dir)
+        trajectory = trajectory.to(device)
 
     visualize_pose(extrinsics, trajectory, args.output_dir)
 
-    target_poses_cnt = 0
-    for ref in reference:
-        if not ref:
-            target_poses_cnt += 1
-    print(f"Number of target poses: {target_poses_cnt}")
+    seq_info = SeqInfo(images, extrinsics, intrinsics, trajectory, reference, args.output_dir, device)
 
-    #for i in range(target_poses_cnt):
-    warp_reference(images, extrinsics, intrinsics, trajectory, reference, args.output_dir)
+    for i in range(seq_info.required_stage):
+        print("Stage", seq_info.cur_stage)
+        known_area_ratio = warp_reference(seq_info)
+        generate_idx = choose_idx_to_generate(seq_info, known_area_ratio)
+        generate_images(gen_model, seq_info, generate_idx)
+        recon_3d_incremental(recon_model, device, seq_info, generate_idx, args.use_mast3r)
+
+
 
 if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser()
@@ -46,4 +55,5 @@ if __name__ == "__main__":
     arg_parser.add_argument("--use_mast3r", "-m", action="store_true")
     args = arg_parser.parse_args()
 
-    main(args)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    main(args, device)

@@ -1,6 +1,14 @@
 checkpoints/*.pth
 checkpoints/*.ckpt
+checkpoints/genwarp
 results/
 __pycache__/
 *.pyc
 *.npy
+
+*.ckpt
+*.pth
+*.safetensors
+*.bin
+*.pkl
+
