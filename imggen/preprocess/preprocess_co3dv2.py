@@ -222,7 +222,9 @@ def prepare_sequences(model, category, co3d_dir, output_dir, img_size, split, mi
 
     for selected_seq_name in selected_sequences_numbers:
         numbers = selected_sequences_numbers_dict[selected_seq_name]
-        selected_sequences_numbers_subset_dict[selected_seq_name] = random.sample(numbers, 10)
+        subset = random.sample(numbers, 10)
+        subset.sort()
+        selected_sequences_numbers_subset_dict[selected_seq_name] = subset
 
     for seq_name, frame_number, filepath in tqdm(sequences_all):
         frame_idx = int(filepath.split('/')[-1][5:-4])
@@ -289,10 +291,10 @@ def prepare_sequences(model, category, co3d_dir, output_dir, img_size, split, mi
     for seq_name in selected_sequences_numbers:
         seq_path = os.path.join(category_output_dir, seq_name, "images")
         seq_list = os.listdir(seq_path)
-        image_list = [f for f in seq_list if f.endswith('.jpg')]
+        image_list = [f"frame{frame_idx:06d}.jpg" for frame_idx in selected_sequences_numbers_subset_dict[seq_name]]
         image_list.sort()
 
-        assert len(image_list) == 10
+        assert len(image_list) == 10, f"len(image_list) != 10: {len(image_list)} {seq_path}"
 
         img_path_list = [os.path.join(seq_path, img_name) for img_name in image_list]
         images = load_images(img_path_list, size=512, square_ok=True)
@@ -344,10 +346,10 @@ def prepare_sequences(model, category, co3d_dir, output_dir, img_size, split, mi
 
         pps = pps.detach().cpu().numpy()
 
-        np.save(os.path.join(category_output_dir, seq_name, f"poses.npy"), poses)
-        np.save(os.path.join(category_output_dir, seq_name, f"focals.npy"), focals)
-        np.save(os.path.join(category_output_dir, seq_name, f"depthmaps.npy"), depthmaps_numpy)
-        np.save(os.path.join(category_output_dir, seq_name, f"pps.npy"), pps)
+        np.save(os.path.join(category_output_dir, seq_name, f"poses_{split}.npy"), poses)
+        np.save(os.path.join(category_output_dir, seq_name, f"focals_{split}.npy"), focals)
+        np.save(os.path.join(category_output_dir, seq_name, f"depthmaps_{split}.npy"), depthmaps_numpy)
+        np.save(os.path.join(category_output_dir, seq_name, f"pps_{split}.npy"), pps)
         # np.savez(os.path.join(category_output_dir, seq_name, f'recon.npz'), poses=poses, focals=focals, pts3d=pts3d_numpy, pps=pps)
 
     return selected_sequences_numbers_subset_dict

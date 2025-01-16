@@ -24,7 +24,7 @@ def get_parser():
     parser.add_argument("--preprocess_dir", type=str, default='/mydata/data/seunghoonjeong/co3d_preprocess_apple')
     return parser
 
-def make_paired_data(category_name, category_dir, category_selected_sequences_info, seed):
+def make_paired_data(category_name, category_dir, category_selected_sequences_info, split, seed):
     random.seed(seed)
     category_paired_data = {
         "data": []
@@ -48,6 +48,9 @@ def make_paired_data(category_name, category_dir, category_selected_sequences_in
         for query_idx in range(len(category_seq_index)):
             query_image_num = category_seq_index[query_idx]
             query_pose = poses[query_idx]
+            query_info_path = os.path.join(seq_dir, 'images', f'frame{query_image_num:06d}.npz')
+            query_info = np.load(query_info_path)
+            assert query_info["camera_pose"].all() == query_pose.all()
             query_focal = focals[query_idx]
             query_pp = pps[query_idx]
             query_R = query_pose[:3, :3]
@@ -66,6 +69,9 @@ def make_paired_data(category_name, category_dir, category_selected_sequences_in
             for ref_idx in ref_idx_candidates:
                 ref_image_num = category_seq_index[ref_idx]
                 ref_pose = poses[ref_idx]
+                ref_info_path = os.path.join(seq_dir, 'images', f'frame{ref_image_num:06d}.npz')
+                ref_info = np.load(ref_info_path)
+                assert ref_info["camera_pose"].all() == ref_pose.all()
                 ref_focal = focals[ref_idx]
                 ref_pp = pps[ref_idx]
                 ref_R = ref_pose[:3, :3]
@@ -83,10 +89,8 @@ def make_paired_data(category_name, category_dir, category_selected_sequences_in
                 flow = flow.reshape(h, w, 2)
 
                 ref_image_path = os.path.join(seq_dir, 'images', f'frame{ref_image_num:06d}.jpg')
-                ref_info_path = os.path.join(seq_dir, 'images', f'frame{ref_image_num:06d}.npz')
                 ref_image = imageio.imread(ref_image_path)
                 ref_image = torch.tensor(ref_image).float() / 127.5 - 1.0
-                ref_info = 
 
                 image = rearrange(ref_image, 'h w c -> c h w').unsqueeze(0)
                 flow = rearrange(flow, 'h w c -> c h w').unsqueeze(0)
@@ -151,6 +155,7 @@ if __name__ == "__main__":
                     category_name=category,
                     category_dir=category_dir,
                     category_selected_sequences_info=category_selected_sequences_info,
+                    split=split,
                     seed=args.seed + CATEGORIES_IDX[category],
                 )
                 with open(category_paired_data_path, 'w') as f:

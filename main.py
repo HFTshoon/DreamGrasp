@@ -43,7 +43,7 @@ def main(args, device):
         known_area_ratio = warp_reference(seq_info)
         generate_idx = choose_idx_to_generate(seq_info, known_area_ratio)
         generate_images(gen_model, seq_info, generate_idx)
-        recon_3d_incremental(recon_model, device, seq_info, generate_idx, args.use_mast3r)
+        # recon_3d_incremental(recon_model, device, seq_info, generate_idx, args.use_mast3r)
 
 
 
