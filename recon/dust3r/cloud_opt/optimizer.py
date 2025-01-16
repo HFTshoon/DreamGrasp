@@ -146,7 +146,7 @@ class PointCloudOptimizer(BasePCOptimizer):
 
     def get_known_focal_mask(self):
         # return torch.tensor([not (p.requires_grad) for p in self.im_focals])
-        return torch.tensor([not (self.im_focal.requires_grad) * len(self.imshapes)])
+        return torch.tensor([not (self.im_focal.requires_grad)] * len(self.imshapes))
 
     def _set_principal_point(self, idx, pp, force=False):
         param = self.im_pp[idx]
