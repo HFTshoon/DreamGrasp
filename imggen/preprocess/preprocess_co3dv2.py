@@ -56,8 +56,8 @@ def get_parser():
     parser.add_argument("--category", type=str, default=None)
     parser.add_argument('--single_sequence_subset', default=False, action='store_true',
                         help="prepare the single_sequence_subset instead.")
-    parser.add_argument("--output_dir", type=str, default='/mydata/data/seunghoonjeong/co3dv2_sample_single_preprocess') # default='/mydata/data/seunghoonjeong/co3d_preprocess')
-    parser.add_argument("--co3d_dir", type=str, default='/mydata/data/seunghoonjeong/co3dv2_sample_single') # default='/mydata/data/hyunsoo/co3d_new')
+    parser.add_argument("--output_dir", type=str, default='/mydata/data/seunghoonjeong/co3dv2_single_preprocess') 
+    parser.add_argument("--co3d_dir", type=str, default='/mydata/data/seunghoonjeong/co3dv2_single')
     parser.add_argument("--num_sequences_per_object", type=int, default=50)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--min_quality", type=float, default=0.5, help="Minimum viewpoint quality score.")

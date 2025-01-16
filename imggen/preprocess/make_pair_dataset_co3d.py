@@ -111,8 +111,6 @@ def make_paired_data(category_name, category_dir, category_selected_sequences_in
                 cv2.imwrite(os.path.join(seq_dir, 'warped', f"{query_image_num}_{ref_image_num}_mask.png"), (1-mask)*255)
         breakpoint()
 
-
-
     return category_paired_data
 
 
