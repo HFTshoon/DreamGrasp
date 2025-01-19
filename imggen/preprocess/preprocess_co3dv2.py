@@ -33,8 +33,20 @@ from recon.dust3r.utils.image import load_images
 from recon.dust3r.image_pairs import make_pairs
 from recon.dust3r.cloud_opt import global_aligner, GlobalAlignerMode
 
-
 CATEGORIES = [
+    "apple", "ball", "banana", "baseballbat", "baseballglove", # backpack
+    "bench", "bicycle", "book", "bottle", "bowl", "broccoli", "cake", "car", "carrot",
+    "couch", "cup", "donut", "frisbee", "hairdryer", "handbag", # cellphone, chair
+    "hotdog", "hydrant", "keyboard", "kite", "laptop", "microwave",
+    "motorcycle",
+    "orange", "parkingmeter", "pizza", "sandwich", # mouse, plant, remote
+    "skateboard", "stopsign",
+    "suitcase", "toaster", "toybus", # teddybear, toilet
+    "toyplane", "toytrain", "toytruck", "tv",
+    "umbrella", "vase", "wineglass",
+]
+
+ALL_CATEGORIES = [
     "apple", "backpack", "ball", "banana", "baseballbat", "baseballglove",
     "bench", "bicycle", "book", "bottle", "bowl", "broccoli", "cake", "car", "carrot",
     "cellphone", "chair", "couch", "cup", "donut", "frisbee", "hairdryer", "handbag",
@@ -46,9 +58,9 @@ CATEGORIES = [
     "toyplane", "toytrain", "toytruck", "tv",
     "umbrella", "vase", "wineglass",
 ]
-CATEGORIES_IDX = {cat: i for i, cat in enumerate(CATEGORIES)}  # for seeding
+CATEGORIES_IDX = {cat: i for i, cat in enumerate(ALL_CATEGORIES)}  # for seeding
 
-SINGLE_SEQUENCE_CATEGORIES = sorted(set(CATEGORIES) - set(["microwave", "stopsign", "tv"]))
+SINGLE_SEQUENCE_CATEGORIES = sorted(set(ALL_CATEGORIES) - set(["microwave", "stopsign", "tv"]))
 
 
 def get_parser():
@@ -379,7 +391,7 @@ def move_and_merge(src, dst):
 
 def merge_folders(co3d_dir):
     folder_list = os.listdir(co3d_dir)
-    for category in CATEGORIES:
+    for category in ALL_CATEGORIES:
         if os.path.exists(os.path.join(co3d_dir, category)):
             continue
         
@@ -411,7 +423,7 @@ if __name__ == "__main__":
     # model_path = 'checkpoints/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth'
     model_path = 'checkpoints/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth'
     device = 'cuda'
-    batch_size = 1
+    batch_size = 45
     schedule = 'cosine'
     lr = 0.01
     niter = 300

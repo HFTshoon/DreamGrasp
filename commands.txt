@@ -4,7 +4,7 @@ s5cmd --no-sign-request cp s3://megascenes/nvs_checkpoints/warp_plus_pose/iter_1
 mkdir imggen/megascenes/configs/zeronvs_original/iter_0
 cd imggen/megascenes/configs/zeronvs_original/iter_0
 gdown --id 17WEMfs2HABJcdf4JmuIM3ti0uz37lSZg
-cd cd ../../../../../
+cd ../../../../../
 
 mkdir checkpoints
 cd checkpoints
@@ -13,4 +13,5 @@ wget https://download.europe.naverlabs.com/ComputerVision/MASt3R/MASt3R_ViTLarge
 cd ../
 
 CUDA_VISIBLE_DEVICES=3 python -m imggen.preprocess.preprocess_co3dv2 --output_dir /mydata/data/seunghoonjeong/co3dv2_apple_preprocess --co3d_dir /mydata/data/seunghoonjeong/co3dv2_apple --category apple
-CUDA_VISIBLE_DEVICES=3 accelerate launch --config_file acc_configs/1.yaml train.py -e configs/warp_plus_pose/
+CUDA_VISIBLE_DEVICES=3 python -m imggen.preprocess.preprocess_co3dv2 --output_dir /mydata/data/seunghoonjeong/co3dv2_doll_preprocess --co3d_dir /mydata/data/seunghoonjeong/co3dv2_doll --category teddybear
+CUDA_VISIBLE_DEVICES=3 accelerate launch --config_file acc_configs/1.yaml train.py -e configs/warp_plus_pose/ -b 4
