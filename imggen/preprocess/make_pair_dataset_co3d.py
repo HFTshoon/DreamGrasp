@@ -7,6 +7,7 @@ import random
 import torch
 import numpy as np
 import imageio.v2 as imageio
+from tqdm import tqdm
 import cv2
 from einops import rearrange
 from splatting import splatting_function
@@ -32,16 +33,16 @@ def make_paired_data(category_name, category_dir, category_selected_sequences_in
 
     category_seq_name = category_selected_sequences_info.keys()
 
-    for seq_name in category_seq_name:
+    for seq_name in tqdm(category_seq_name):
         category_seq_index = category_selected_sequences_info[seq_name]
         seq_dir = os.path.join(category_dir, seq_name)
         warped_dir = os.path.join(seq_dir, 'warped')
         os.makedirs(warped_dir, exist_ok=True)
 
-        poses = np.load(os.path.join(category_dir, seq_name, 'poses.npy'))
-        focals = np.load(os.path.join(category_dir, seq_name, 'focals.npy'))
-        pps = np.load(os.path.join(category_dir, seq_name, 'pps.npy'))
-        depthmaps = np.load(os.path.join(category_dir, seq_name, 'depthmaps.npy'))
+        poses = np.load(os.path.join(category_dir, seq_name, f'poses_{split}.npy'))
+        focals = np.load(os.path.join(category_dir, seq_name, f'focals_{split}.npy'))
+        pps = np.load(os.path.join(category_dir, seq_name, f'pps_{split}.npy'))
+        depthmaps = np.load(os.path.join(category_dir, seq_name, f'depthmaps_{split}.npy'))
         pts3d = make_pts3d(depthmaps, poses, focals, pps)
         h,w = depthmaps[0].shape
 
@@ -61,11 +62,19 @@ def make_paired_data(category_name, category_dir, category_selected_sequences_in
                 [0, 0, 1]
             ]).float()
 
+            # choose how many reference images to use (1~3)
+            ref_cnt = random.randint(1, 3)
+
             # get random 3 reference_idx without query_idx
             ref_idx_candidates = list(range(len(category_seq_index)))
             ref_idx_candidates.remove(query_idx)
-            ref_idx_candidates = random.sample(ref_idx_candidates, 3)
+            ref_idx_candidates = random.sample(ref_idx_candidates, ref_cnt)
+            ref_idx_candidates.sort()
+            ref_idx_image_nums = [category_seq_index[ref_idx] for ref_idx in ref_idx_candidates]
 
+            ref_images = []
+            ref_flows = []
+            ref_depths = []
             for ref_idx in ref_idx_candidates:
                 ref_image_num = category_seq_index[ref_idx]
                 ref_pose = poses[ref_idx]
@@ -94,26 +103,73 @@ def make_paired_data(category_name, category_dir, category_selected_sequences_in
 
                 image = rearrange(ref_image, 'h w c -> c h w').unsqueeze(0)
                 flow = rearrange(flow, 'h w c -> c h w').unsqueeze(0)
+                ref_images.append(image)
+                ref_flows.append(flow)
+                ref_depths.append(depth)
 
-                # importance weight based on depth
-                importance = 0.5 / depth
-                importance -= importance.min()
-                importance /= importance.max() + 1e-6
-                importance = importance * 10 - 10
-                importance = importance.reshape(h, w, 1)
-                importance = rearrange(importance, 'h w c -> c h w').unsqueeze(0)
-                warped = splatting_function('softmax', image, flow, importance, eps=1e-6)
-                mask = (warped == 0).all(dim=1, keepdim=True).to(image.dtype)
+                # # importance weight based on depth
+                # importance = 0.5 / depth
+                # importance -= importance.min()
+                # importance /= importance.max() + 1e-6
+                # importance = importance * 10 - 10
+                # importance = importance.reshape(h, w, 1)
+                # importance = rearrange(importance, 'h w c -> c h w').unsqueeze(0)
+                # warped = splatting_function('softmax', image, flow, importance, eps=1e-6)
+                # mask = (warped == 0).all(dim=1, keepdim=True).to(image.dtype)
                 
-                overlap = 1 - mask.sum().item() / (h*w)
+                # overlap = 1 - mask.sum().item() / (h*w)
 
-                # visualize
-                warped = rearrange(warped[0], 'c h w -> h w c').detach().cpu().numpy()
-                warped = ((warped + 1) * 127.5).astype(np.uint8)
-                mask = rearrange(mask[0], 'c h w -> h w c').detach().cpu().numpy()
-                cv2.imwrite(os.path.join(seq_dir, 'warped', f"{query_image_num}_{ref_image_num}.png"), cv2.cvtColor(warped, cv2.COLOR_RGB2BGR))
-                cv2.imwrite(os.path.join(seq_dir, 'warped', f"{query_image_num}_{ref_image_num}_mask.png"), (1-mask)*255)
-        breakpoint()
+                # # visualize
+                # warped = rearrange(warped[0], 'c h w -> h w c').detach().cpu().numpy()
+                # warped = ((warped + 1) * 127.5).astype(np.uint8)
+                # mask = rearrange(mask[0], 'c h w -> h w c').detach().cpu().numpy()
+                # cv2.imwrite(os.path.join(seq_dir, 'warped', f"{query_image_num}_{ref_image_num}.png"), cv2.cvtColor(warped, cv2.COLOR_RGB2BGR))
+                # cv2.imwrite(os.path.join(seq_dir, 'warped', f"{query_image_num}_{ref_image_num}_mask.png"), (1-mask)*255)
+            
+            ref_cnt = len(ref_images)
+
+            ref_images_stack = torch.cat(ref_images, dim=2)     # (1, 3, H * B, W)
+
+            for i, flow in enumerate(ref_flows):
+                flow[0,1] -= i * h
+            ref_flows_stack = torch.cat(ref_flows, dim=2)       # (1, 2, H * B, W)
+
+            ref_depths_stack = torch.cat(ref_depths, dim=0)     # (H * W * B,)
+            ref_importance = 0.5 / ref_depths_stack
+            ref_importance -= ref_importance.min()
+            ref_importance /= ref_importance.max() + 1e-6
+            ref_importance = ref_importance * 10 - 10
+
+            ref_importance_chunks = []
+            for i in range(ref_cnt):
+                chunk = ref_importance[i*h*w:(i+1)*h*w]
+                chunk = chunk.reshape(h, w, 1)
+                chunk = rearrange(chunk, 'h w c -> c h w').unsqueeze(0)
+                ref_importance_chunks.append(chunk)
+            ref_importance = torch.cat(ref_importance_chunks, dim=2)  # (1, 1, H * B, W)
+
+            warped = splatting_function('softmax', ref_images_stack, ref_flows_stack, ref_importance, eps=1e-6)
+            warped = warped[:,:,:h,:]  # (1, 3, H, W)
+            mask = (warped == 0).all(dim=1, keepdim=True).to(image.dtype)
+            mask = mask[:,:,:h,:]  # (1, 1, H, W)
+
+            # visualize
+            warped = rearrange(warped[0], 'c h w -> h w c').detach().cpu().numpy()
+            warped = ((warped + 1) * 127.5).astype(np.uint8)
+            mask = rearrange(mask[0], 'c h w -> h w c').detach().cpu().numpy()
+            candidate_str = "-".join([str(ref_idx) for ref_idx in ref_idx_image_nums])
+            cv2.imwrite(os.path.join(seq_dir, 'warped', f"{query_image_num}_{candidate_str}.png"), cv2.cvtColor(warped, cv2.COLOR_RGB2BGR))
+            cv2.imwrite(os.path.join(seq_dir, 'warped', f"{query_image_num}_{candidate_str}_mask.png"), (1-mask)*255)
+            category_paired_data["data"].append({
+                "category": category_name,
+                "seq_name": seq_name,
+                "query_idx": query_idx,
+                "query_image_num": query_image_num,
+                "ref_idx_candidates": ref_idx_candidates,
+                "ref_image_nums": ref_idx_image_nums,
+                "warped_image_path": os.path.join(seq_dir, 'warped', f"{query_image_num}_{candidate_str}.png"),
+                "warped_mask_path": os.path.join(seq_dir, 'warped', f"{query_image_num}_{candidate_str}_mask.png"),
+            })
 
     return category_paired_data
 
@@ -158,5 +214,10 @@ if __name__ == "__main__":
                 )
                 with open(category_paired_data_path, 'w') as f:
                     json.dump(category_paired_data, f, indent=4)
+                print(f"Saved {split} {category} paired data at {category_paired_data_path}")
 
             paired_data[category] = category_paired_data["data"]
+        
+        with open(paired_data_path, 'w') as f:
+            json.dump(paired_data, f, indent=4)
+        print(f"Saved {split} paired data at {paired_data_path}")

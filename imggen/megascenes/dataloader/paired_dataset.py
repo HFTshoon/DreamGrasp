@@ -17,7 +17,7 @@ import math
 import hashlib
 
 class PairedDataset(Dataset):
-    def __init__(self, target_res=256, split='train', pose_cond='warp_plus_pose'):
+    def __init__(self, target_res=512, split='train', pose_cond='warp_plus_pose', data_dir='data', category='apple'):
         
         # warp_plus_pose: scale translation based on 20th quantile of depth
         # inpainting: only use warped depth as pose condition, no additional pose condition for crossattn
@@ -27,53 +27,76 @@ class PairedDataset(Dataset):
         self.scaleclip = 1e-7
         self.target_res = target_res
         
-        if split == 'train':
-            with open('data/splits/trainsplit.pkl', 'rb') as f: 
-                paired_images = pickle.load(f) # path1, path2, dict1, dict2, scale for path1 (dict keys: extrinsics, intrinsics)
+        # if split == 'train':
+        #     with open('data/splits/trainsplit.pkl', 'rb') as f: 
+        #         paired_images = pickle.load(f) # path1, path2, dict1, dict2, scale for path1 (dict keys: extrinsics, intrinsics)
 
-        else:
-            with open('data/splits/testsplit.pkl', 'rb') as f: 
-                paired_images = pickle.load(f)
-                # first 10000 are used for validation
-                # 10000: are used for testing 
-                paired_images = paired_images[10000:] 
-                
-        paired_images = paired_images[:1]
+        # else:
+        #     with open('data/splits/testsplit.pkl', 'rb') as f: 
+        #         paired_images = pickle.load(f)
+        #         # first 10000 are used for validation
+        #         # 10000: are used for testing 
+        #         paired_images = paired_images[10000:] 
+        
+        
+        random.seed(42)
+        self.data_dir = data_dir
+        with open(os.path.join(data_dir, f'paired_data_{split}.json'), 'r') as f:
+            paired_images = json.load(f)[category]
+
+        print(paired_images[0])
         self.paired_images = paired_images
-
 
     def __len__(self):
         return len(self.paired_images)
 
     def __getitem__(self, idx):
 
-        if len(self.paired_images[idx])==4:
-            path1, path2, dict1, dict2 = self.paired_images[idx]
-        else:
-            path1, path2, dict1, dict2, scales = self.paired_images[idx]
+        # if len(self.paired_images[idx])==4:
+        #     path1, path2, dict1, dict2 = self.paired_images[idx]
+        # else:
+        #     path1, path2, dict1, dict2, scales = self.paired_images[idx]
+
+        category = self.paired_images[idx]['category']
+        seq_name = self.paired_images[idx]['seq_name']
+        query_idx = self.paired_images[idx]['query_idx']
+        query_image_num = self.paired_images[idx]['query_image_num']
+        ref_idx_list = self.paired_images[idx]['ref_idx_candidates']
+        ref_image_num_list = self.paired_images[idx]['ref_image_nums']
+        warped_image_path = self.paired_images[idx]['warped_image_path']
+        warped_mask_path = self.paired_images[idx]['warped_mask_path']
+
+        # get ref image from ref_idx_list (randomly)
+        ref_idx_idx = random.randint(0, len(ref_idx_list)-1)
+        ref_idx = ref_idx_list[ref_idx_idx]
+        ref_image_num = ref_image_num_list[ref_idx_idx]
+
+        pose_info = np.load(os.path.join(self.data_dir, category, seq_name, f"poses_{self.split}.npy"), allow_pickle=True)
+        focal_info = np.load(os.path.join(self.data_dir, category, seq_name, f"focals_{self.split}.npy"), allow_pickle=True)
+        # pps_length = np.load(os.path.join(self.data_dir, category, seq_name, f"pps_{self.split}.npy"), allow_pickle=True)
+
         try:
-            path1 = "/mydata/data/seunghoonjeong/DreamGrasp/assets/doll/0.png"
-            path2 = "/mydata/data/seunghoonjeong/DreamGrasp/assets/doll/1.png"
+            path1 = os.path.join(self.data_dir, category, seq_name, "images", "frame%06d.jpg" % query_image_num)
+            path2 = os.path.join(self.data_dir, category, seq_name, "images", "frame%06d.jpg" % ref_image_num)
             # img_ref = np.array(Image.open(path1)) /127.5-1.0
             # img_target = np.array(Image.open(path2)) /127.5-1.0 # HxWx3
-            img_ref = resize_with_padding(path1, 512, black=False) /127.5-1.0
-            img_target = resize_with_padding(path2, 512, black=False) /127.5-1.0
+            img_target = resize_with_padding(path1, int(self.target_res), black=False) /127.5-1.0
+            img_ref = resize_with_padding(path2, int(self.target_res), black=False) /127.5-1.0
         except Exception as error:
             print("exception when loading image: ", error, path1, path2)
-            img_ref = np.zeros((256,256,3)) -1.0
-            img_target = np.zeros((256,256,3)) -1.0
+            img_ref = np.zeros((int(self.target_res),int(self.target_res),3)) -1.0
+            img_target = np.zeros((int(self.target_res),int(self.target_res),3)) -1.0
 
 
         if self.pose_cond not in ['zeronvs_baseline'] or self.split!='train':
-            warpname = "/mydata/data/seunghoonjeong/DreamGrasp/results/doll/warp_stage0/stacked_19.png"
             try:
-                high_warped_depth = Image.open(warpname) # original warped image with high resolution
-                warped_depth = resize_with_padding(high_warped_depth, 64, black=False) /127.5-1.0 
-                high_warped_depth = resize_with_padding(high_warped_depth, 512, black=False) /127.5-1.0 
+                high_warped_depth = Image.open(warped_image_path) # original warped image with high resolution
+                warped_depth = resize_with_padding(high_warped_depth, int(self.target_res) // 8, black=False) /127.5-1.0 
+                high_warped_depth = resize_with_padding(high_warped_depth, int(self.target_res), black=False) /127.5-1.0 
             except Exception as error:
-                print("exception when loading warped depth:", error, path1, path2, warpname)
-                warped_depth = np.zeros((32,32,3)) -1.0
-                high_warped_depth = np.zeros((256,256,3)) -1.0
+                print("exception when loading warped depth:", error, path1, path2, warped_image_path)
+                warped_depth = np.zeros((int(self.target_res) // 8, int(self.target_res) // 8, 3)) -1.0
+                high_warped_depth = np.zeros((int(self.target_res),int(self.target_res),3)) -1.0
 
         if self.pose_cond == 'inpainting':
             retdict = dict(image_target=img_target, image_ref=img_ref, warped_depth=warped_depth, highwarp=high_warped_depth)
@@ -90,39 +113,30 @@ class PairedDataset(Dataset):
             mask[mask < 0.5] = 0
             mask[mask >= 0.5] = 1
             #masked_image = torch.tensor(img_target).permute(2,0,1) * (mask < 0.5)
-            masked_image = np.array(Image.open(warpname))
+            masked_image = np.array(Image.open(warped_image_path))
             masked_image[np.all(masked_image == [0,0,0], axis=-1)] = [127,127,127]
-            masked_image = resize_with_padding(Image.fromarray(masked_image), 256, black=False) /127.5-1.0 
+            masked_image = resize_with_padding(Image.fromarray(masked_image), self.target_res, black=False) /127.5-1.0 
             #ipdb.set_trace()
-            retdict = dict(image_target=img_target,  image_ref=img_ref, highwarp=high_warped_depth, mask=mask, masked_image=masked_image, txt="photograph of a beautiful scene, highest quality settings")
+            retdict = dict(image_target=img_target, image_ref=img_ref, highwarp=high_warped_depth, mask=mask, masked_image=masked_image, txt="photograph of a beautiful scene, highest quality settings")
             if self.split!='train':
                 return retdict, idx
             return retdict
 
-        dict1_extrinsics = np.array([
-            [0.9999919533729553, -0.0039535281248390675, 0.0007246877648867667, 0.0], 
-            [0.00395191228017211, 0.9999897480010986, 0.0022180795203894377, 0.0], 
-            [-0.0007334495312534273, -0.00221519754268229, 0.9999973177909851, 0.0], 
-            [0.0, 0.0, 0.0, 1.0]])
-        dict2_extrinsics = np.array([
-            [-0.8861775994300842, -0.40905532240867615, 0.21763068437576294, -0.06119517982006073], 
-            [0.424800306558609, -0.529701292514801, 0.7341398596763611, -0.4925293028354645], 
-            [-0.18502455949783325, 0.7430278658866882, 0.6431761980056763, 0.27335068583488464], 
-            [0.0, 0.0, 0.0, 1.0]
-        ])
-        height = 512
-        width = 512
-        focal_length = 588.2550048828125
-        cx = 256.0
-        cy = 256.0
+        dict1_extrinsics = pose_info[query_idx]
+        dict2_extrinsics = pose_info[ref_idx]
+        height = self.target_res
+        width = self.target_res
+        focal_length = focal_info[query_idx]
+        cx = self.target_res / 2.0
+        cy = self.target_res / 2.0
         
         sensor_diagonal = math.sqrt(width**2 + height**2)
         diagonal_fov = 2 * math.atan(sensor_diagonal / (2 * focal_length)) # assuming fx = fy
 
-        ext_ref = np.linalg.inv(dict1_extrinsics)
-        ext_target = np.linalg.inv(dict2_extrinsics) # using c2w, following zeronvs
+        ext_ref = np.linalg.inv(dict2_extrinsics)
+        ext_target = np.linalg.inv(dict1_extrinsics) # using c2w, following zeronvs
 
-
+        scales = 1.0 # default scale
         if self.pose_cond == 'zero123':
             tref = ext_ref[:3, -1] / np.clip(scales, a_min=self.scaleclip, a_max=None)
             ttarget = ext_target[:3, -1] / np.clip(scales, a_min=self.scaleclip, a_max=None)

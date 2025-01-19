@@ -27,7 +27,7 @@ def main():
     config_file = yaml.safe_load(open(os.path.join(args.exp_dir, 'config.yaml')))
     train_configs = config_file.get('training', {})
 
-    dataset = PairedDataset(pose_cond=train_configs['pose_cond'], split='train')
+    dataset = PairedDataset(pose_cond=train_configs['pose_cond'], split='train', data_dir=args.dataset_dir, category=args.category)
     print("size of dataset: ", len(dataset))
     dataloader = DataLoader(
         dataset, batch_size=args.batch_size, num_workers=args.workers,
@@ -43,7 +43,7 @@ def main():
     model.learning_rate = float(train_configs.get('learning_rate', 1e-4))
     gradient_accumulation_steps = train_configs.get('gradient_accumulation_steps', 1)
     log_freq = 500
-    save_freq = log_freq*2
+    save_freq = log_freq*20
     total_iterations = 150000
     optimizer, scheduler = model.configure_optimizers()
 
@@ -190,6 +190,9 @@ if __name__ == '__main__':
     arg_parser.add_argument("--log", "-l", action='store_true', help='logs to wandb')
     arg_parser.add_argument("--batch_size", "-b", default=64, type=int)
     arg_parser.add_argument("--workers", "-w", default=8, type=int)
+
+    arg_parser.add_argument("--category", "-c", default="apple", type=str)
+    arg_parser.add_argument("--dataset_dir", "-d", default="/mydata/data/seunghoonjeong/co3dv2_sample_apple_preprocess", type=str)
 
     args = arg_parser.parse_args()
    
