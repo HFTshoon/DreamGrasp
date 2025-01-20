@@ -18,11 +18,11 @@ from util.util_warp import compute_optical_flow
 
 def get_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--category", type=str, default="apple") # default=None)
+    parser.add_argument("--category", type=str, default=None) # "apple") # default=None)
     parser.add_argument('--single_sequence_subset', default=False, action='store_true',
                         help="prepare the single_sequence_subset instead.")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--preprocess_dir", type=str, default='/mydata/data/seunghoonjeong/co3d_preprocess_apple')
+    parser.add_argument("--preprocess_dir", type=str, default='/mydata/data/seunghoonjeong/co3d_apple_preprocess')
     return parser
 
 def make_paired_data(category_name, category_dir, category_selected_sequences_info, split, seed):

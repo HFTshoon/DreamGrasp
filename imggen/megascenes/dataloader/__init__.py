@@ -1,1 +1,1 @@
-from .paired_dataset import PairedDataset
+from .paired_dataset import PairedDataset, TempPairedDataset

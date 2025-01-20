@@ -33,19 +33,6 @@ from recon.dust3r.utils.image import load_images
 from recon.dust3r.image_pairs import make_pairs
 from recon.dust3r.cloud_opt import global_aligner, GlobalAlignerMode
 
-CATEGORIES = [
-    "apple", "ball", "banana", "baseballbat", "baseballglove", # backpack
-    "bench", "bicycle", "book", "bottle", "bowl", "broccoli", "cake", "car", "carrot",
-    "couch", "cup", "donut", "frisbee", "hairdryer", "handbag", # cellphone, chair
-    "hotdog", "hydrant", "keyboard", "kite", "laptop", "microwave",
-    "motorcycle",
-    "orange", "parkingmeter", "pizza", "sandwich", # mouse, plant, remote
-    "skateboard", "stopsign",
-    "suitcase", "toaster", "toybus", # teddybear, toilet
-    "toyplane", "toytrain", "toytruck", "tv",
-    "umbrella", "vase", "wineglass",
-]
-
 ALL_CATEGORIES = [
     "apple", "backpack", "ball", "banana", "baseballbat", "baseballglove",
     "bench", "bicycle", "book", "bottle", "bowl", "broccoli", "cake", "car", "carrot",
@@ -59,6 +46,7 @@ ALL_CATEGORIES = [
     "umbrella", "vase", "wineglass",
 ]
 CATEGORIES_IDX = {cat: i for i, cat in enumerate(ALL_CATEGORIES)}  # for seeding
+CATEGORIES = ALL_CATEGORIES
 
 SINGLE_SEQUENCE_CATEGORIES = sorted(set(ALL_CATEGORIES) - set(["microwave", "stopsign", "tv"]))
 

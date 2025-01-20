@@ -16,6 +16,9 @@ def main(args, device):
     if args.output_dir is None:
         args.output_dir = f"results/{args.exp_name}"
         os.makedirs(args.output_dir, exist_ok=True)
+    
+    if args.model_dir is None:
+        args.model_dir = f"imggen/megascenes/train_results/{args.exp_name}"
 
     print(f"Experiment name: {args.exp_name}")
     print(f"Input directory: {args.input_dir}")
@@ -23,7 +26,7 @@ def main(args, device):
 
     recon_model = load_recon_model(args.use_mast3r, device)
 
-    gen_model = load_gen_model(device)
+    gen_model = load_gen_model(args.output_dir, args.model_dir, device)
 
     image_paths, images, extrinsics, intrinsics, trajectory, reference = get_inputs(args.input_dir, device)
 
@@ -53,6 +56,7 @@ if __name__ == "__main__":
     arg_parser.add_argument("--input_dir", "-i", type=str)
     arg_parser.add_argument("--output_dir", "-o", type=str)
     arg_parser.add_argument("--use_mast3r", "-m", action="store_true")
+    arg_parser.add_argument("--model_dir", "-c", type=str)
     args = arg_parser.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"

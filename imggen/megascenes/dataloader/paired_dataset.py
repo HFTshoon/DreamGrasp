@@ -41,8 +41,16 @@ class PairedDataset(Dataset):
         
         random.seed(42)
         self.data_dir = data_dir
-        with open(os.path.join(data_dir, f'paired_data_{split}.json'), 'r') as f:
-            paired_images = json.load(f)[category]
+        if category is not None:
+            with open(os.path.join(data_dir, f'paired_data_{split}.json'), 'r') as f:
+                paired_images = json.load(f)[category]
+        else:
+            with open(os.path.join(data_dir, f'paired_data_{split}.json'), 'r') as f:
+                paired_images_json = json.load(f)
+            categories = paired_images_json.keys()
+            paired_images = []
+            for category in categories:
+                paired_images += paired_images_json[category]
 
         print(paired_images[0])
         self.paired_images = paired_images
@@ -126,7 +134,7 @@ class PairedDataset(Dataset):
         dict2_extrinsics = pose_info[ref_idx]
         height = self.target_res
         width = self.target_res
-        focal_length = focal_info[query_idx]
+        focal_length = focal_info[query_idx][0]
         cx = self.target_res / 2.0
         cy = self.target_res / 2.0
         
@@ -178,4 +186,20 @@ class PairedDataset(Dataset):
             return retdict, idx
         return retdict
 
+class TempPairedDataset(PairedDataset):
+    def __init__(self, seq_info, generate_idx):
+        breakpoint()
+        self.pose_cond = 'warp_plus_pose'
+        self.split = 'test'
+        self.scaleclip = 1e-7
 
+        assert seq_info.default_h == seq_info.default_w
+        self.target_res = seq_info.default_h
+
+        random.seed(42)
+        self.data_dir = data_dir
+        with open(os.path.join(data_dir, f'paired_data_{split}.json'), 'r') as f:
+            paired_images = json.load(f)[category]
+
+        print(paired_images[0])
+        self.paired_images = paired_images
