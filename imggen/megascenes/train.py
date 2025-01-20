@@ -24,8 +24,10 @@ torch.backends.cudnn.benchmark = True
 
 def main():
     # load data
-    config_file = yaml.safe_load(open(os.path.join(args.exp_dir, 'config.yaml')))
+    config_file = yaml.safe_load(open(os.path.join(args.cfg_dir, 'config.yaml')))
     train_configs = config_file.get('training', {})
+
+    os.makedirs(args.exp_dir, exist_ok=True)
 
     dataset = PairedDataset(pose_cond=train_configs['pose_cond'], split='train', data_dir=args.dataset_dir, category=args.category)
     print("size of dataset: ", len(dataset))
@@ -173,6 +175,7 @@ if __name__ == '__main__':
     import argparse
 
     arg_parser = argparse.ArgumentParser()
+    arg_parser.add_argument("--cfg_dir", "-c", required=True, type=str)
     arg_parser.add_argument(
         "--exp_dir", "-e", required=True,
         help="Directory for logging. Should include 'specs.yaml'",
@@ -191,7 +194,7 @@ if __name__ == '__main__':
     arg_parser.add_argument("--batch_size", "-b", default=64, type=int)
     arg_parser.add_argument("--workers", "-w", default=8, type=int)
 
-    arg_parser.add_argument("--category", "-c", default="apple", type=str)
+    arg_parser.add_argument("--category", default=None, type=str)
     arg_parser.add_argument("--dataset_dir", "-d", default="/mydata/data/seunghoonjeong/co3dv2_sample_apple_preprocess", type=str)
 
     args = arg_parser.parse_args()
