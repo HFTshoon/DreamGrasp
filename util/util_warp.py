@@ -55,17 +55,20 @@ def compute_optical_flow(P, R_source, T_source, K_source, R_query, T_query, K_qu
     # 쿼리 뷰에서의 2D 투영
     pts_query, depth_query = project_points(P, R_query, T_query, K_query)  # (N, 2)
     
+    # pts_source_numpy = pts_source.detach().cpu().numpy()
+    # pts_query_numpy = pts_query.detach().cpu().numpy()
     # for i in range(10):
-    #     x = round(pts_source[i][0],2)
-    #     y = round(pts_source[i][1],2)
+    #     x = round(pts_source_numpy[i][0],2)
+    #     y = round(pts_source_numpy[i][1],2)
     #     target_x = i
     #     target_y = 0
+    #     print(f"Projection : {x}, {y} -> {target_x}, {target_y}")
     #     if abs(x - target_x) > 5 or abs(y - target_y) > 5:
     #         print(f"Projection warning! : {x}, {y} -> {target_x}, {target_y}")
 
-    # idx = np.random.choice(len(pts_source), 10, replace=False)
+    # idx = np.random.choice(len(pts_source_numpy), 10, replace=False)
     # for i in idx:
-    #     print(round(pts_source[i][0],2), round(pts_source[i][1],2), "->", round(pts_query[i][0],2), round(pts_query[i][1],2))
+    #     print(f"({i%512}, {i//512}) ",round(pts_source_numpy[i][0],2), round(pts_source_numpy[i][1],2), "->", round(pts_query_numpy[i][0],2), round(pts_query_numpy[i][1],2))
 
     # Optical Flow 계산
     flow = pts_query - pts_source  # (N, 2)
@@ -80,9 +83,8 @@ def warp_reference(seq_info):
 
     known_area_ratio = [0] * seq_info.length
     for query_idx in range(seq_info.length):
-        # if seq_info.reference[query_idx] != -1:
-        #     known_area_ratio[query_idx] = 1
-        #     continue
+        if seq_info.reference[query_idx] != -1:
+            known_area_ratio[query_idx] = 1
     
         ref_images = []
         ref_flows = []
@@ -151,7 +153,8 @@ def warp_reference(seq_info):
         mask = (warped == 0).all(dim=1, keepdim=True).to(image.dtype)
         mask = mask[:,:,:h,:]  # (1, 1, H, W)
 
-        known_area_ratio[query_idx] = 1 - mask.sum().item() / (h*w)
+        if seq_info.reference[query_idx] == -1:
+            known_area_ratio[query_idx] = 1 - mask.sum().item() / (h*w)
         seq_info.views[query_idx].set_warped_and_mask(warped, mask)
 
         # visualize
@@ -164,6 +167,6 @@ def warp_reference(seq_info):
     plt.figure()
     x = np.arange(len(known_area_ratio))
     plt.plot(x, known_area_ratio, "k.", label="Known Area Ratio")
-    plt.savefig(os.path.join(seq_info.project_dir, "known_area_ratio.png"))
+    plt.savefig(os.path.join(seq_info.project_dir, f"warp_stage{seq_info.cur_stage}", "known_area_ratio.png"))
 
     return known_area_ratio

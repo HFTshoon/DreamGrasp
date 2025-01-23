@@ -14,13 +14,20 @@ cd ../
 
 CUDA_VISIBLE_DEVICES=3 python -m imggen.preprocess.preprocess_co3dv2 --output_dir /mydata/data/seunghoonjeong/co3dv2_apple_preprocess --co3d_dir /mydata/data/seunghoonjeong/co3dv2_apple --category apple
 CUDA_VISIBLE_DEVICES=3 python -m imggen.preprocess.preprocess_co3dv2 --output_dir /mydata/data/seunghoonjeong/co3dv2_doll_preprocess --co3d_dir /mydata/data/seunghoonjeong/co3dv2_doll --category teddybear
+CUDA_VISIBLE_DEVICES=3 python -m imggen.preprocess.preprocess_co3dv2 --output_dir /mydata/data/seunghoonjeong/co3dv2_preprocess --co3d_dir /mydata/data/seunghoonjeong/co3dv2
+
+python -m imggen.preprocess.make_pair_dataset_co3d --preprocess_dir /mydata/data/seunghoonjeong/co3dv2_apple_preprocess --category apple
+python -m imggen.preprocess.make_pair_dataset_co3d --preprocess_dir /mydata/data/seunghoonjeong/co3dv2_doll_preprocess --category teddybear
+python -m imggen.preprocess.make_pair_dataset_co3d --preprocess_dir /mydata/data/seunghoonjeong/co3dv2_preprocess
 
 cd imggen/megascenes
 CUDA_VISIBLE_DEVICES=3 accelerate launch --config_file acc_configs/1.yaml train.py -c configs/warp_plus_pose/ -e train_results/apple --category apple --dataset_dir /mydata/data/seunghoonjeong/co3dv2_apple_preprocess -b 4
 CUDA_VISIBLE_DEVICES=3 accelerate launch --config_file acc_configs/1.yaml train.py -c configs/warp_plus_pose/ -e train_results/doll --category teddybear --dataset_dir /mydata/data/seunghoonjeong/co3dv2_doll_preprocess -b 4
 CUDA_VISIBLE_DEVICES=3 accelerate launch --config_file acc_configs/1.yaml train.py -c configs/warp_plus_pose/ -e train_results/single --dataset_dir /mydata/data/seunghoonjeong/co3dv2_single_preprocess -b 16
+CUDA_VISIBLE_DEVICES=3 accelerate launch --config_file acc_configs/1.yaml train.py -c configs/warp_plus_pose/ -e train_results/full --dataset_dir /mydata/data/seunghoonjeong/co3dv2_preprocess -b 4
 
-# CUDA_VISIBLE_DEVICES=3 python test.py -e configs/warp_plus_pose -r 10000 -s doll_test -b 4 -w 1 --save_generations True --save_data --category teddybear --dataset_dir /mydata/data/seunghoonjeong/co3dv2_doll_preprocess
+CUDA_VISIBLE_DEVICES=3 python test.py -c configs/warp_plus_pose/ -e train_results/apple -r 10000 -s apple_test -b 1 -w 1 --save_generations True --save_data --category apple --dataset_dir /mydata/data/seunghoonjeong/co3dv2_sample_apple_preprocess
+CUDA_VISIBLE_DEVICES=3 python test.py -c configs/warp_plus_pose/ -e train_results/doll -r 10000 -s doll_test -b 1 -w 1 --save_generations True --save_data --category teddybear --dataset_dir /mydata/data/seunghoonjeong/co3dv2_doll_preprocess
 cd ../../
 
 CUDA_VISIBLE_DEVICES=3 python main.py -n doll -m
