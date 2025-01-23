@@ -106,30 +106,6 @@ class PairedDataset(Dataset):
                 warped_depth = np.zeros((int(self.target_res) // 8, int(self.target_res) // 8, 3)) -1.0
                 high_warped_depth = np.zeros((int(self.target_res),int(self.target_res),3)) -1.0
 
-        if self.pose_cond == 'inpainting':
-            retdict = dict(image_target=img_target, image_ref=img_ref, warped_depth=warped_depth, highwarp=high_warped_depth)
-            if self.split!='train':
-                return retdict, idx
-            return retdict
-
-
-        if self.pose_cond == 'sdinpaint':
-            mask = np.zeros_like(high_warped_depth)
-            mask[np.all(high_warped_depth == [-1,-1,-1], axis=-1)] = [255,255,255]
-            mask = np.array(Image.fromarray(mask.astype(np.uint8)).convert("L")).astype(np.float32)/255.0
-            mask = torch.tensor(mask).unsqueeze(0)
-            mask[mask < 0.5] = 0
-            mask[mask >= 0.5] = 1
-            #masked_image = torch.tensor(img_target).permute(2,0,1) * (mask < 0.5)
-            masked_image = np.array(Image.open(warped_image_path))
-            masked_image[np.all(masked_image == [0,0,0], axis=-1)] = [127,127,127]
-            masked_image = resize_with_padding(Image.fromarray(masked_image), self.target_res, black=False) /127.5-1.0 
-            #ipdb.set_trace()
-            retdict = dict(image_target=img_target, image_ref=img_ref, highwarp=high_warped_depth, mask=mask, masked_image=masked_image, txt="photograph of a beautiful scene, highest quality settings")
-            if self.split!='train':
-                return retdict, idx
-            return retdict
-
         dict1_extrinsics = pose_info[query_idx]
         dict2_extrinsics = pose_info[ref_idx]
         height = self.target_res
@@ -145,22 +121,6 @@ class PairedDataset(Dataset):
         ext_target = np.linalg.inv(dict1_extrinsics) # using c2w, following zeronvs
 
         scales = 1.0 # default scale
-        if self.pose_cond == 'zero123':
-            tref = ext_ref[:3, -1] / np.clip(scales, a_min=self.scaleclip, a_max=None)
-            ttarget = ext_target[:3, -1] / np.clip(scales, a_min=self.scaleclip, a_max=None)
-            theta_cond, azimuth_cond, z_cond = cartesian_to_spherical(tref[None, :])
-            theta_target, azimuth_target, z_target = cartesian_to_spherical(ttarget[None, :])
-            
-            d_theta = theta_target - theta_cond
-            d_azimuth = (azimuth_target - azimuth_cond) % (2 * math.pi)
-            d_z = z_target - z_cond
-            
-            d_T = torch.tensor([d_theta.item(), math.sin(d_azimuth.item()), math.cos(d_azimuth.item()), d_z.item()]).float()
-
-            retdict = dict(image_target=img_target,  image_ref=img_ref, rel_pose=d_T, highwarp=high_warped_depth)
-            if self.split!='train':
-                return retdict, idx
-            return retdict
 
         fov = torch.tensor(diagonal_fov) # target fov, invariant to resizing
         rel_pose = np.linalg.inv(ext_ref) @ ext_target # 4x4
@@ -173,8 +133,7 @@ class PairedDataset(Dataset):
         fov_enc = torch.stack( [fov, torch.sin(fov), torch.cos(fov)] )
         rel_pose = torch.tensor(rel_pose.reshape((16)))
         rel_pose = torch.cat([rel_pose, fov_enc]).float()
-        
-        
+                
         if self.pose_cond == 'warp_plus_pose':
             retdict = dict(image_target=img_target,  image_ref=img_ref, rel_pose=rel_pose, warped_depth=warped_depth, highwarp=high_warped_depth)
         elif self.pose_cond == 'zeronvs_baseline':
@@ -188,7 +147,6 @@ class PairedDataset(Dataset):
 
 class TempPairedDataset(PairedDataset):
     def __init__(self, seq_info, generate_idx):
-        breakpoint()
         self.pose_cond = 'warp_plus_pose'
         self.split = 'test'
         self.scaleclip = 1e-7
@@ -197,9 +155,111 @@ class TempPairedDataset(PairedDataset):
         self.target_res = seq_info.default_h
 
         random.seed(42)
-        self.data_dir = data_dir
-        with open(os.path.join(data_dir, f'paired_data_{split}.json'), 'r') as f:
-            paired_images = json.load(f)[category]
 
-        print(paired_images[0])
+        paired_images = []
+        for idx in generate_idx:
+            overlaps = seq_info.views[idx].overlaps
+            # get biggest overlap
+            reference_idx = overlaps.index(max(overlaps))
+            print(f"Generate image {idx} from reference {reference_idx} ({overlaps[reference_idx]})")
+            ref_image = (seq_info.views[reference_idx].image.cpu().detach().numpy() + 1) * 127.5
+            ref_image = ref_image.astype(np.uint8)
+
+            warped_image = (seq_info.views[idx].warped.cpu().detach().numpy() + 1) * 127.5
+            warped_image = np.transpose(warped_image[0], (1,2,0)).astype(np.uint8)
+            
+            paired_data = {
+                "reference_idx" : reference_idx,
+                "reference_pose" : seq_info.views[reference_idx].pose.cpu().detach().numpy(),
+                "reference_focal" : seq_info.views[reference_idx].focal,
+                "reference_image" : ref_image,
+                "target_idx" : idx,
+                "target_pose" : seq_info.views[idx].pose.cpu().detach().numpy(),
+                "target_focal" : seq_info.views[idx].focal,
+                "warped_image" : warped_image,
+                "warped_mask" : seq_info.views[idx].mask,
+            }
+            paired_images.append(paired_data)
+
         self.paired_images = paired_images
+
+    def __len__(self):
+        return len(self.paired_images)
+
+    def __getitem__(self, idx):
+        ref_idx = self.paired_images[idx]["reference_idx"]
+        target_idx = self.paired_images[idx]["target_idx"]
+
+        try:
+            img_target = np.zeros((int(self.target_res),int(self.target_res),3)) -1.0
+            img_ref = Image.fromarray(self.paired_images[idx]["reference_image"])
+            img_ref = resize_with_padding(img_ref, int(self.target_res), black=False) /127.5-1.0 
+        except Exception as error:
+            print("exception when loading image:", error)
+            img_target = np.zeros((int(self.target_res),int(self.target_res),3)) -1.0
+            img_ref = np.zeros((int(self.target_res),int(self.target_res),3)) -1.0
+
+
+        if self.pose_cond not in ['zeronvs_baseline'] or self.split!='train':
+            try:
+                high_warped_depth = Image.fromarray(self.paired_images[idx]["warped_image"])
+                warped_depth = resize_with_padding(high_warped_depth, int(self.target_res) // 8, black=False) /127.5-1.0 
+                high_warped_depth = resize_with_padding(high_warped_depth, int(self.target_res), black=False) /127.5-1.0 
+            except Exception as error:
+                print("exception when loading warped depth:", error)
+                high_warped_depth = np.zeros((int(self.target_res),int(self.target_res),3)) -1.0
+                warped_depth = np.zeros((int(self.target_res) // 8, int(self.target_res) // 8, 3)) -1.0
+
+        dict1_extrinsics = self.paired_images[idx]['target_pose']
+        dict2_extrinsics = self.paired_images[idx]['reference_pose']
+        height = self.target_res
+        width = self.target_res
+
+        assert self.paired_images[idx]['target_focal'] == self.paired_images[idx]['reference_focal']
+        focal_length = self.paired_images[idx]['target_focal'] 
+        cx = self.target_res / 2.0
+        cy = self.target_res / 2.0
+        
+        sensor_diagonal = math.sqrt(width**2 + height**2)
+        diagonal_fov = 2 * math.atan(sensor_diagonal / (2 * focal_length)) # assuming fx = fy
+
+        ext_ref = np.linalg.inv(dict2_extrinsics)
+        ext_target = np.linalg.inv(dict1_extrinsics) # using c2w, following zeronvs
+
+        scales = 1.0 # default scale
+
+        fov = torch.tensor(diagonal_fov) # target fov, invariant to resizing
+        rel_pose = np.linalg.inv(ext_ref) @ ext_target # 4x4
+
+        # if self.pose_cond in ['warp_plus_pose', 'zeronvs_baseline']:
+        #     depth_ref = np.load( self.imgname_to_depthname(path1) ) # HxW
+        #     scales = np.quantile( depth_ref[::8, ::8].reshape(-1), q=0.2 ) 
+        rel_pose[:3, -1] /= np.clip(scales, a_min=self.scaleclip, a_max=None) # scales preprocessed for faster data loading
+
+        fov_enc = torch.stack( [fov, torch.sin(fov), torch.cos(fov)] )
+        rel_pose = torch.tensor(rel_pose.reshape((16)))
+        rel_pose = torch.cat([rel_pose, fov_enc]).float()
+        
+        # for debug
+        # img_ref = Image.open("imggen/megascenes/quant_eval/apple_test/refimgs/0.png")
+        # img_target = Image.open("imggen/megascenes/quant_eval/apple_test/tarimgs/0.png")
+        # img_ref = resize_with_padding(img_ref, int(self.target_res), black=False) /127.5-1.0 
+        # img_target = resize_with_padding(img_target, int(self.target_res), black=False) /127.5-1.0
+        # high_warped_depth = Image.open("imggen/megascenes/quant_eval/apple_test/masks/0.png")
+        # warped_depth = resize_with_padding(high_warped_depth, int(self.target_res) // 8, black=False) /127.5-1.0 
+        # high_warped_depth = resize_with_padding(high_warped_depth, int(self.target_res), black=False) /127.5-1.0 
+        # rel_pose = torch.Tensor([
+        #     -0.9408, -0.3204,  0.1108,  5.3313,  0.2051, -0.2776,  0.9386,  2.1735,
+        #     -0.2699,  0.9057,  0.3268,  2.4848,  0.0000,  0.0000,  0.0000,  1.0000,
+        #     0.8943,  0.7798,  0.6260])
+                
+        if self.pose_cond == 'warp_plus_pose':
+            retdict = dict(image_target=img_target,  image_ref=img_ref, rel_pose=rel_pose, warped_depth=warped_depth, highwarp=high_warped_depth)
+        elif self.pose_cond == 'zeronvs_baseline':
+            retdict = dict(image_target=img_target,  image_ref=img_ref, rel_pose=rel_pose) # , highwarp=high_warped_depth
+            if self.split!='train':
+                retdict['highwarp'] = high_warped_depth
+    
+        if self.split!='train':
+            return retdict, idx, ref_idx, target_idx
+        return retdict
