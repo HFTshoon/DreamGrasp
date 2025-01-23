@@ -180,6 +180,7 @@ def get_set_list(category_dir, split, is_single_sequence_subset=False):
 
 def prepare_sequences(model, category, co3d_dir, output_dir, img_size, split, min_quality, max_num_sequences_per_object,
                       seed, is_single_sequence_subset=False):
+    recon_frame_cnt = 8
     random.seed(seed)
     category_dir = osp.join(co3d_dir, category)
     category_output_dir = osp.join(output_dir, category)
@@ -222,15 +223,21 @@ def prepare_sequences(model, category, co3d_dir, output_dir, img_size, split, mi
 
     for selected_seq_name in selected_sequences_numbers:
         numbers = selected_sequences_numbers_dict[selected_seq_name]
-        subset = random.sample(numbers, 10)
+        subset = random.sample(numbers, recon_frame_cnt)
         subset.sort()
         selected_sequences_numbers_subset_dict[selected_seq_name] = subset
 
+    error_count = 0
+    error_sequences = []
     for seq_name, frame_number, filepath in tqdm(sequences_all):
         frame_idx = int(filepath.split('/')[-1][5:-4])
         
         if frame_idx not in selected_sequences_numbers_subset_dict[seq_name]:
             continue
+
+        # for debug
+        # if seq_name != "39_1749_5095":
+        #     continue
 
         # selected_sequences_numbers_dict[seq_name].append(frame_idx)
         frame_data = frame_data_processed[seq_name][frame_number]
@@ -289,12 +296,16 @@ def prepare_sequences(model, category, co3d_dir, output_dir, img_size, split, mi
             print(f"Warning: Focal length is not equal in x and y directions. {input_camera_intrinsics[0, 0]}, {input_camera_intrinsics[1, 1]}")
 
     for seq_name in selected_sequences_numbers:
+        # for debug
+        # if seq_name != "39_1749_5095":
+        #     continue
+
         seq_path = os.path.join(category_output_dir, seq_name, "images")
         seq_list = os.listdir(seq_path)
         image_list = [f"frame{frame_idx:06d}.jpg" for frame_idx in selected_sequences_numbers_subset_dict[seq_name]]
         image_list.sort()
 
-        assert len(image_list) == 10, f"len(image_list) != 10: {len(image_list)} {seq_path}"
+        assert len(image_list) == recon_frame_cnt, f"len(image_list) != {recon_frame_cnt}: {len(image_list)} {seq_path}"
 
         img_path_list = [os.path.join(seq_path, img_name) for img_name in image_list]
         images = load_images(img_path_list, size=512, square_ok=True)
@@ -309,22 +320,30 @@ def prepare_sequences(model, category, co3d_dir, output_dir, img_size, split, mi
         pairs = make_pairs(images, scene_graph='complete', prefilter=None, symmetrize=True)
         output = inference(pairs, model, device, batch_size=batch_size)
 
-        scene = global_aligner(output, device=device, mode=GlobalAlignerMode.PointCloudOptimizer)
-        scene.min_conf_thr = 1.5 # for MASt3R
-        
-        scene.preset_pose(input_poses)
-        scene.preset_focal(input_focals)        
-        scene.preset_principal_point_zero()
+        try:
+            scene = global_aligner(output, device=device, mode=GlobalAlignerMode.PointCloudOptimizer)
+            scene.min_conf_thr = 1.5 # for MASt3R
+            
+            scene.preset_pose(input_poses)
+            scene.preset_focal(input_focals)        
+            scene.preset_principal_point_zero()
 
-        loss = scene.compute_global_alignment(init="known_poses", niter=niter, schedule=schedule, lr=lr)
-        
-        poses = scene.get_im_poses()            # (10, 4, 4)
-        focals = scene.get_focals()             # (10, 1)
-        pps = scene.get_principal_points()      # (10, 2)
-        depthmaps = scene.get_depthmaps()       # 10 x (512, 512)
+            loss = scene.compute_global_alignment(init="mst", niter=niter, schedule=schedule, lr=lr)
+            
+            poses = scene.get_im_poses()            # (10, 4, 4)
+            focals = scene.get_focals()             # (10, 1)
+            pps = scene.get_principal_points()      # (10, 2)
+            depthmaps = scene.get_depthmaps()       # 10 x (512, 512)
 
-        poses = poses.detach().cpu().numpy()
-        focals = focals.detach().cpu().numpy()
+            poses = poses.detach().cpu().numpy()
+            focals = focals.detach().cpu().numpy()
+        except:
+            # delete this seq from selected_sequences_numbers_subset_dict
+            print(f"Error in {seq_name}")
+            del selected_sequences_numbers_subset_dict[seq_name]
+            error_count += 1
+            error_sequences.append(os.path.join(category_output_dir, seq_name))
+            continue
 
         # pts3d = scene.get_pts3d()               # 10 x (512, 512, 3)
         # pts_list = []
@@ -339,7 +358,7 @@ def prepare_sequences(model, category, co3d_dir, output_dir, img_size, split, mi
         # pcd.points = o3d.utility.Vector3dVector(pts3d_all)
         # o3d.io.write_point_cloud(os.path.join(category_output_dir, seq_name, f"pts3d.ply"), pcd)
 
-        depthmaps_numpy = np.zeros((10, 512, 512), dtype=np.float32)
+        depthmaps_numpy = np.zeros((recon_frame_cnt, 512, 512), dtype=np.float32)
         for i, dps in enumerate(depthmaps):
             dps = dps.detach().cpu().numpy()
             depthmaps_numpy[i] = dps
@@ -352,6 +371,8 @@ def prepare_sequences(model, category, co3d_dir, output_dir, img_size, split, mi
         np.save(os.path.join(category_output_dir, seq_name, f"pps_{split}.npy"), pps)
         # np.savez(os.path.join(category_output_dir, seq_name, f'recon.npz'), poses=poses, focals=focals, pts3d=pts3d_numpy, pps=pps)
 
+    print(f"Error count: {error_count}")
+    print(f"Error sequences: {error_sequences}")
     return selected_sequences_numbers_subset_dict
 
 def move_and_merge(src, dst):
@@ -411,7 +432,7 @@ if __name__ == "__main__":
     # model_path = 'checkpoints/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth'
     model_path = 'checkpoints/MASt3R_ViTLarge_BaseDecoder_512_catmlpdpt_metric.pth'
     device = 'cuda'
-    batch_size = 45
+    batch_size = 28
     schedule = 'cosine'
     lr = 0.01
     niter = 300
@@ -428,6 +449,7 @@ if __name__ == "__main__":
             os.makedirs(category_output_dir, exist_ok=True)
             category_selected_sequences_path = os.path.join(category_output_dir, f'selected_seqs_{split}.json')
             if os.path.isfile(category_selected_sequences_path):
+                print(f"Skipping {split} - category = {category}")
                 with open(category_selected_sequences_path, 'r') as fid:
                     category_selected_sequences = json.load(fid)
             else:
