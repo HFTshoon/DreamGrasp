@@ -140,7 +140,7 @@ def minimum_spanning_tree(imshapes, edges, pred_i, pred_j, conf_i, conf_j, im_co
 
     # init with strongest edge
     score, i, j = todo.pop()
-    print(f' init edge ({i}*,{j}*) {score=}')
+    # print(f' init edge ({i}*,{j}*) {score=}')
     i_j = edge_str(i, j)
     pts3d[i] = pred_i[i_j].clone()
     pts3d[j] = pred_j[i_j].clone()
@@ -159,7 +159,7 @@ def minimum_spanning_tree(imshapes, edges, pred_i, pred_j, conf_i, conf_j, im_co
             im_focals[i] = estimate_focal(pred_i[i_j])
 
         if i in done:
-            print(f' init edge ({i},{j}*) {score=}')
+            # print(f' init edge ({i},{j}*) {score=}')
             assert j not in done
             # align pred[i] with pts3d[i], and then set j accordingly
             i_j = edge_str(i, j)
@@ -173,7 +173,7 @@ def minimum_spanning_tree(imshapes, edges, pred_i, pred_j, conf_i, conf_j, im_co
                 im_poses[i] = sRT_to_4x4(1, R, T, device)
 
         elif j in done:
-            print(f' init edge ({i}*,{j}) {score=}')
+            # print(f' init edge ({i}*,{j}) {score=}')
             assert i not in done
             i_j = edge_str(i, j)
             s, R, T = rigid_points_registration(pred_j[i_j], pts3d[j], conf=conf_j[i_j])

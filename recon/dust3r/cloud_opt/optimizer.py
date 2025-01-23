@@ -70,7 +70,7 @@ class PointCloudOptimizer(BasePCOptimizer):
         if isinstance(known_poses, torch.Tensor) and known_poses.ndim == 2:
             known_poses = [known_poses]
         for idx, pose in zip(self._get_msk_indices(pose_msk), known_poses):
-            print(f' (setting pose #{idx} = {pose[:3,3]})')
+            # print(f' (setting pose #{idx} = {pose[:3,3]})')
             self._no_grad(self._set_pose(self.im_poses, idx, torch.tensor(pose)))
 
         # normalize scale if there's less than 1 known pose
@@ -93,7 +93,7 @@ class PointCloudOptimizer(BasePCOptimizer):
         self._check_all_imgs_are_selected(msk)
 
         known_focals_mean = np.mean(known_focals)
-        print(f' (setting focal = {known_focals_mean})')
+        # print(f' (setting focal = {known_focals_mean})')
         self._no_grad(self._set_focal(known_focals_mean))
 
         self.im_focal.requires_grad_(False)
@@ -102,7 +102,7 @@ class PointCloudOptimizer(BasePCOptimizer):
         self._check_all_imgs_are_selected(msk)
 
         for idx, pp in zip(self._get_msk_indices(msk), known_pp):
-            print(f' (setting principal point #{idx} = {pp})')
+            # print(f' (setting principal point #{idx} = {pp})')
             self._no_grad(self._set_principal_point(idx, pp))
 
         self.im_pp.requires_grad_(False)

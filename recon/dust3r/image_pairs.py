@@ -8,31 +8,37 @@ import numpy as np
 import torch
 
 
-def make_pairs(imgs, scene_graph='complete', prefilter=None, symmetrize=True):
+def make_pairs(imgs, scene_graph='complete', prefilter=None, symmetrize=True, new_data_msk=None):
     pairs = []
 
-    if scene_graph == 'complete':  # complete graph
+    if new_data_msk is not None:
         for i in range(len(imgs)):
             for j in range(i):
-                pairs.append((imgs[i], imgs[j]))
+                if (new_data_msk[i] and not new_data_msk[j]) or (new_data_msk[j] and not new_data_msk[i]):
+                    pairs.append((imgs[i], imgs[j]))
+    else:
+        if scene_graph == 'complete':  # complete graph
+            for i in range(len(imgs)):
+                for j in range(i):
+                    pairs.append((imgs[i], imgs[j]))
 
-    elif scene_graph.startswith('swin'):
-        winsize = int(scene_graph.split('-')[1]) if '-' in scene_graph else 3
-        for i in range(len(imgs)):
-            for j in range(winsize):
-                idx = (i + j) % len(imgs)  # explicit loop closure
-                pairs.append((imgs[i], imgs[idx]))
+        elif scene_graph.startswith('swin'):
+            winsize = int(scene_graph.split('-')[1]) if '-' in scene_graph else 3
+            for i in range(len(imgs)):
+                for j in range(winsize):
+                    idx = (i + j) % len(imgs)  # explicit loop closure
+                    pairs.append((imgs[i], imgs[idx]))
 
-    elif scene_graph.startswith('oneref'):
-        refid = int(scene_graph.split('-')[1]) if '-' in scene_graph else 0
-        for j in range(len(imgs)):
-            if j != refid:
-                pairs.append((imgs[refid], imgs[j]))
+        elif scene_graph.startswith('oneref'):
+            refid = int(scene_graph.split('-')[1]) if '-' in scene_graph else 0
+            for j in range(len(imgs)):
+                if j != refid:
+                    pairs.append((imgs[refid], imgs[j]))
 
-    elif scene_graph == 'pairs':
-        assert len(imgs) % 2 == 0
-        for i in range(0, len(imgs), 2):
-            pairs.append((imgs[i], imgs[i+1]))
+        elif scene_graph == 'pairs':
+            assert len(imgs) % 2 == 0
+            for i in range(0, len(imgs), 2):
+                pairs.append((imgs[i], imgs[i+1]))
 
     if symmetrize:
         pairs += [(img2, img1) for img1, img2 in pairs]
