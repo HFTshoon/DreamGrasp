@@ -2,6 +2,7 @@ import os
 
 import numpy as np
 import torch
+from PIL import Image
 
 from util.util_warp import compute_optical_flow
 
@@ -37,6 +38,8 @@ class SeqInfo():
     def __init__(self, images, extrinsics, intrinsics, trajectory, reference, project_dir, device):
         self.device = device
         self.project_dir = project_dir
+        os.makedirs(os.path.join(project_dir, "sequence"), exist_ok=True)
+
         self.length = len(trajectory)
         self.views = [None for _ in range(self.length)]
         
@@ -48,16 +51,17 @@ class SeqInfo():
         self.reference = reference
 
         target_poses_cnt = 0
+        reference_poses_cnt = 0
         for i in range(self.length):
             if reference[i] == -1:
                 self.views[i] = ViewInfo(
-                    image = None,
-                    ref_idx = -1,
+                    image = None, # Have to generate this
+                    ref_idx = -1, # No reference
                     size = (self.default_h, self.default_w), 
                     pose = trajectory[i], 
                     focal = self.default_focal, 
                     pp = self.default_pp, 
-                    stage = -1,
+                    stage = -1, # Not a reference view yet
                     length = self.length,
                     device = device
                 )
@@ -65,6 +69,10 @@ class SeqInfo():
 
             else:
                 assert torch.allclose(trajectory[i], extrinsics[reference[i]]), f"Pose does not match at index {i}: {trajectory[i]}, {extrinsics[reference[i]]}"
+                image = (images[reference[i]].cpu().detach().numpy() + 1) * 127.5
+                image = image.astype(np.uint8)
+                Image.fromarray(image).save(os.path.join(project_dir, "sequence", f"{i}.png"))
+
                 self.views[i] = ViewInfo(
                     image = images[reference[i]], 
                     ref_idx = reference[i],
@@ -76,14 +84,17 @@ class SeqInfo():
                     length = self.length,
                     device = device
                 )
+                reference_poses_cnt += 1
 
         self.target_poses_cnt = target_poses_cnt
+        self.reference_poses_cnt = reference_poses_cnt
         self.generated_poses_cnt = 0
 
         required_stage = 0
         while target_poses_cnt > 1:
             target_poses_cnt //= 2
             required_stage += 1
+        required_stage += 1
 
         self.required_stage = required_stage
         print(f"Target poses count: {self.target_poses_cnt}, Required stage: {self.required_stage}")
@@ -112,3 +123,10 @@ class SeqInfo():
 
         return flow, depth
     
+    def set_generated_image(self, idx, image):
+        self.views[idx].image = image
+        self.views[idx].stage = self.cur_stage + 1
+        self.views[idx].ref_idx = self.reference_poses_cnt
+        self.reference[idx] = self.reference_poses_cnt
+        self.reference_poses_cnt += 1
+        self.generated_poses_cnt += 1
