@@ -36,7 +36,7 @@ def make_paired_data(category_name, category_dir, category_selected_sequences_in
     for seq_name in tqdm(category_seq_name):
         category_seq_index = category_selected_sequences_info[seq_name]
         seq_dir = os.path.join(category_dir, seq_name)
-        warped_dir = os.path.join(seq_dir, 'warped')
+        warped_dir = os.path.join(seq_dir, 'warped_2')
         os.makedirs(warped_dir, exist_ok=True)
 
         image_cnt = len(category_seq_index)
@@ -44,6 +44,7 @@ def make_paired_data(category_name, category_dir, category_selected_sequences_in
         focals = np.load(os.path.join(category_dir, seq_name, f'focals_{split}.npy'))
         pps = np.load(os.path.join(category_dir, seq_name, f'pps_{split}.npy'))
         depthmaps = np.load(os.path.join(category_dir, seq_name, f'depthmaps_{split}.npy'))
+        depthmaps = depthmaps[:image_cnt, :, :]
         pts3d = make_pts3d(depthmaps, poses, focals, pps)
         h,w = depthmaps[0].shape
 
@@ -178,8 +179,8 @@ def make_paired_data(category_name, category_dir, category_selected_sequences_in
                 warped = ((warped + 1) * 127.5).astype(np.uint8)
                 mask = rearrange(mask[0], 'c h w -> h w c').detach().cpu().numpy()
                 candidate_str = "-".join([str(ref_idx) for ref_idx in ref_idx_image_nums])
-                cv2.imwrite(os.path.join(seq_dir, 'warped', f"{query_image_num}_{candidate_str}.png"), cv2.cvtColor(warped, cv2.COLOR_RGB2BGR))
-                cv2.imwrite(os.path.join(seq_dir, 'warped', f"{query_image_num}_{candidate_str}_mask.png"), (1-mask)*255)
+                cv2.imwrite(os.path.join(warped_dir, f"{query_image_num}_{candidate_str}.png"), cv2.cvtColor(warped, cv2.COLOR_RGB2BGR))
+                cv2.imwrite(os.path.join(warped_dir, f"{query_image_num}_{candidate_str}_mask.png"), (1-mask)*255)
                 category_paired_data["data"].append({
                     "category": category_name,
                     "seq_name": seq_name,
@@ -187,8 +188,8 @@ def make_paired_data(category_name, category_dir, category_selected_sequences_in
                     "query_image_num": query_image_num,
                     "ref_idx_candidates": ref_idx_candidates,
                     "ref_image_nums": ref_idx_image_nums,
-                    "warped_image_path": os.path.join(seq_dir, 'warped', f"{query_image_num}_{candidate_str}.png"),
-                    "warped_mask_path": os.path.join(seq_dir, 'warped', f"{query_image_num}_{candidate_str}_mask.png"),
+                    "warped_image_path": os.path.join(warped_dir, f"{query_image_num}_{candidate_str}.png"),
+                    "warped_mask_path": os.path.join(warped_dir, f"{query_image_num}_{candidate_str}_mask.png"),
                 })
 
     return category_paired_data
@@ -206,8 +207,9 @@ if __name__ == "__main__":
     else:
         categories = [args.category]
 
-    for split in ['train', 'test']:
-        paired_data_path = os.path.join(args.preprocess_dir, f'paired_data_{split}.json')
+    # for split in ['train', 'test']:
+    for split in ['train']:
+        paired_data_path = os.path.join(args.preprocess_dir, f'paired_data_{split}_2.json')
         if os.path.isfile(paired_data_path):
             continue
 
@@ -218,7 +220,7 @@ if __name__ == "__main__":
 
         for category in categories:
             category_dir = os.path.join(args.preprocess_dir, category)
-            category_paired_data_path = os.path.join(category_dir, f'paired_data_{split}.json')
+            category_paired_data_path = os.path.join(category_dir, f'paired_data_{split}_2.json')
             if os.path.isfile(category_paired_data_path):
                 with open(category_paired_data_path, 'r') as f:
                     category_paired_data = json.load(f)
