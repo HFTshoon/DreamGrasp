@@ -4,7 +4,8 @@ import numpy as np
 import torch
 from PIL import Image
 
-from util.util_warp import compute_optical_flow
+from util.util_pose import get_cameras_origin, get_angle_between_pair_cameras
+from util.util_warp import compute_optical_flow, get_warped_coords
 
 class ViewInfo():
     def __init__(self, image, ref_idx, size, pose, focal, pp, stage, length, device):
@@ -90,6 +91,18 @@ class SeqInfo():
         self.reference_poses_cnt = reference_poses_cnt
         self.generated_poses_cnt = 0
 
+        Rs = [pose[:3, :3].detach().cpu().numpy() for pose in trajectory]
+        Ts = [pose[:3, 3].detach().cpu().numpy() for pose in trajectory]
+        self.scene_origin = get_cameras_origin(Rs, Ts)
+        print(f"Scene origin: {self.scene_origin}")
+
+        self.pair_angles = np.zeros((self.length, self.length))
+        for i in range(self.length):
+            for j in range(self.length):
+                if i == j:
+                    continue
+                self.pair_angles[i, j] = get_angle_between_pair_cameras(Ts[i], Ts[j], self.scene_origin)
+
         required_stage = 0
         while target_poses_cnt > 1:
             target_poses_cnt //= 2
@@ -122,6 +135,22 @@ class SeqInfo():
         flow = flow.reshape(reference_h, reference_w, 2)
 
         return flow, depth
+    
+    def get_warped_coords_query_from_reference(self, query_idx, reference_idx):
+        grid = torch.stack(torch.meshgrid(torch.arange(0, self.default_h), torch.arange(0, self.default_w)), dim=-1).float()
+        coords = torch.stack((grid[..., 0]/self.default_h, grid[..., 1]/self.default_w), dim=-1).to(self.device) # (H, W, 2)
+        freq_bands = 2.**torch.linspace(0., 1., steps=2)
+        peridoic_funcs = [torch.sin, torch.cos]
+        embed_fns = []
+        for freq in freq_bands:
+            for p_fn in peridoic_funcs:
+                embed_fns.append(lambda x, p_fn=p_fn, freq=freq: p_fn(x * freq))
+
+        coords = torch.cat([fn(coords) for fn in embed_fns], dim=-1) # (H, W, 8)
+
+        flow, depth = self.get_flow_query_from_reference(query_idx, reference_idx)
+        warped_coords = get_warped_coords(coords, flow, depth)
+        return coords, warped_coords
     
     def set_generated_image(self, idx, image):
         self.views[idx].image = image

@@ -37,6 +37,61 @@ def angle_about_axis(z_axis, from_vec, to_vec):
     angle = np.arctan2(sin_val, cos_val)
     return angle
 
+def get_cameras_origin(Rs, Ts):
+    M_sum = np.zeros((3, 3), dtype=float)
+    b_sum = np.zeros(3, dtype=float)
+    
+    # z축 벡터
+    z_axis = np.array([0.0, 0.0, 1.0])
+    
+    for R, t in zip(Rs, Ts):
+        # 카메라 중심 c = -R^T * t
+        c = -R.T @ t
+        
+        # 카메라가 월드에서 바라보는 z축 방향 d = R^T * (0,0,1)
+        d = R.T @ z_axis
+        # 정규화
+        d /= np.linalg.norm(d)
+        
+        # M_i = I - d d^T
+        M_i = np.eye(3) - np.outer(d, d)
+        
+        # 누적
+        M_sum += M_i
+        b_sum += M_i @ c
+    
+    # 선형방정식 M_sum * P = b_sum 풀기
+    # 만약 M_sum 이 singular(역행렬이 존재하지 않는) 경우 np.linalg.inv()가 에러
+    # => np.linalg.pinv() 등으로 대체 가능
+    P = np.linalg.inv(M_sum) @ b_sum
+
+    return P
+
+def get_angle_between_pair_cameras(T1, T2, P):
+    """
+    두 카메라의 위치 벡터가 주어졌을 때, 두 카메라의 회전 각도를 계산합니다.
+
+    Parameters:
+    - T1, T2: 첫 번째 카메라와 두 번째 카메라의 위치 벡터 (3D 벡터)
+    - P: 두 카메라의 중심 위치 벡터 (3D 벡터)
+
+    Returns:
+    - angle: 두 카메라의 회전 각도 (라디안)
+    """
+    # 카메라 레이 방향 벡터 (Z축)
+    D1 = T1 - P
+    D2 = T2 - P
+
+    # 정규화
+    D1 = D1 / np.linalg.norm(D1)
+    D2 = D2 / np.linalg.norm(D2)
+
+    # 두 벡터 사이의 각도 계산
+    dot = np.dot(D1, D2)
+    dot = np.clip(dot, -1.0, 1.0)
+    angle = np.arccos(dot)
+    return angle
+
 def generate_smooth_camera_path(R1, T1, R2, T2, N):
     """
     두 카메라의 회전 행렬과 위치 벡터가 주어졌을 때,
