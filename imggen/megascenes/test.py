@@ -94,7 +94,7 @@ def main():
                 if "state_dict" in old_state:
                     old_state = old_state["state_dict"]
                 model.load_state_dict(old_state)
-                model, dataloader = accelerator.prepare( model, dataloader )
+            model, dataloader = accelerator.prepare( model, dataloader )
 
             kid_subset = min(1000, len(dataset)-1) # 1000 is default
             print("kid subset: ", kid_subset)

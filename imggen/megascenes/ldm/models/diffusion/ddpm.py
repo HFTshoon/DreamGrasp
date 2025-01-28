@@ -29,6 +29,7 @@ from ldm.models.diffusion.ddim import DDIMSampler
 from ldm.modules.attention import CrossAttention
 
 import ipdb
+from minlora import add_lora, apply_to_lora, disable_lora, enable_lora, get_lora_params, merge_lora, name_is_lora, remove_lora, load_multiple_lora, select_lora
 
 __conditioning_keys__ = {'concat': 'c_concat',
                          'crossattn': 'c_crossattn',
@@ -1646,50 +1647,61 @@ class LatentDiffusion(DDPM):
                 return {key: log[key] for key in return_keys}
         return log
 
-    def configure_optimizers(self):
+    def configure_optimizers(self, use_lora=False):
         lr = self.learning_rate
         params = []
-        if self.unet_trainable == "attn":
-            print("Training only unet attention layers")
-            for n, m in self.model.named_modules():
-                if isinstance(m, CrossAttention) and n.endswith('attn2'):
-                    params.extend(m.parameters())
-        if self.unet_trainable == "conv_in":
-            print("Training only unet input conv layers")
-            params = list(self.model.diffusion_model.input_blocks[0][0].parameters())
-        elif self.unet_trainable is True or self.unet_trainable == "all":
-            print("Training the full unet")
-            params = list(self.model.parameters())
+        if use_lora:
+            print("Add lora layers to unet")
+            add_lora(self.model.diffusion_model)
+            print("Training only unet lora layers")
+            params = list(get_lora_params(self.model.diffusion_model))
+            opt_list = [{"params": params, "lr": lr}]
+
+            if self.has_extra_layer:
+                print("Training lora cc_projection!!")
+                opt_list.append({"params": self.cc_projection.parameters(), "lr": 10. * lr})
         else:
-            raise ValueError(f"Unrecognised setting for unet_trainable: {self.unet_trainable}")
-        
+            if self.unet_trainable == "attn":
+                print("Training only unet attention layers")
+                for n, m in self.model.named_modules():
+                    if isinstance(m, CrossAttention) and n.endswith('attn2'):
+                        params.extend(m.parameters())
+            if self.unet_trainable == "conv_in":
+                print("Training only unet input conv layers")
+                params = list(self.model.diffusion_model.input_blocks[0][0].parameters())
+            elif self.unet_trainable is True or self.unet_trainable == "all":
+                print("Training the full unet")
+                params = list(self.model.parameters())
+            else:
+                raise ValueError(f"Unrecognised setting for unet_trainable: {self.unet_trainable}")
+            
 
-        opt_list = [{"params": self.model.parameters(), "lr": lr}]
+            opt_list = [{"params": self.model.parameters(), "lr": lr}]
 
-        if self.cond_stage_trainable:
-            print(f"{self.__class__.__name__}: Also optimizing conditioner params!")
-            #params = params + list(self.cond_stage_model.parameters())
-            opt_list.append({"params": self.cond_stage_model.parameters(), "lr": 10. * lr})
+            if self.cond_stage_trainable:
+                print(f"{self.__class__.__name__}: Also optimizing conditioner params!")
+                #params = params + list(self.cond_stage_model.parameters())
+                opt_list.append({"params": self.cond_stage_model.parameters(), "lr": 10. * lr})
 
-        if self.has_extra_layer:
-            print("training cc_projection!!")
-            opt_list.append({"params": self.cc_projection.parameters(), "lr": 10. * lr})
+            if self.has_extra_layer:
+                print("training cc_projection!!")
+                opt_list.append({"params": self.cc_projection.parameters(), "lr": 10. * lr})
 
-        if self.learn_logvar:
-            print('Diffusion model optimizing logvar')
-            params.append(self.logvar)
+            if self.learn_logvar:
+                print('Diffusion model optimizing logvar')
+                params.append(self.logvar)
 
-        
+            
 
-        if self.concat_conv is not None:
-            print("training concat conv!!")
-            opt_list.append({"params": self.concat_conv.parameters(), "lr": 10. * lr})
-        
-        if self.first_stage_trainable == 'decoder':
-            print("training AE decoder!!")
-            ae_params = list(self.first_stage_model.decoder.parameters()) + list(self.first_stage_model.post_quant_conv.parameters())
-            opt_list.append({"params": ae_params, "lr": lr/10.})
-        
+            if self.concat_conv is not None:
+                print("training concat conv!!")
+                opt_list.append({"params": self.concat_conv.parameters(), "lr": 10. * lr})
+            
+            if self.first_stage_trainable == 'decoder':
+                print("training AE decoder!!")
+                ae_params = list(self.first_stage_model.decoder.parameters()) + list(self.first_stage_model.post_quant_conv.parameters())
+                opt_list.append({"params": ae_params, "lr": lr/10.})
+            
 
         opt = torch.optim.AdamW(opt_list)
 
