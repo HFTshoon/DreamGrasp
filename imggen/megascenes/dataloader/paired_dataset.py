@@ -27,18 +27,6 @@ class PairedDataset(Dataset):
         self.scaleclip = 1e-7
         self.target_res = target_res
         
-        # if split == 'train':
-        #     with open('data/splits/trainsplit.pkl', 'rb') as f: 
-        #         paired_images = pickle.load(f) # path1, path2, dict1, dict2, scale for path1 (dict keys: extrinsics, intrinsics)
-
-        # else:
-        #     with open('data/splits/testsplit.pkl', 'rb') as f: 
-        #         paired_images = pickle.load(f)
-        #         # first 10000 are used for validation
-        #         # 10000: are used for testing 
-        #         paired_images = paired_images[10000:] 
-        
-        
         random.seed(42)
         self.data_dir = data_dir
         if category is not None:
@@ -59,12 +47,6 @@ class PairedDataset(Dataset):
         return len(self.paired_images)
 
     def __getitem__(self, idx):
-
-        # if len(self.paired_images[idx])==4:
-        #     path1, path2, dict1, dict2 = self.paired_images[idx]
-        # else:
-        #     path1, path2, dict1, dict2, scales = self.paired_images[idx]
-
         category = self.paired_images[idx]['category']
         seq_name = self.paired_images[idx]['seq_name']
         query_idx = self.paired_images[idx]['query_idx']
@@ -167,17 +149,21 @@ class TempPairedDataset(PairedDataset):
 
             warped_image = (seq_info.views[idx].warped.cpu().detach().numpy() + 1) * 127.5
             warped_image = np.transpose(warped_image[0], (1,2,0)).astype(np.uint8)
+
+            coords, warped_coords = seq_info.get_warped_coords_query_from_reference(idx, reference_idx)
             
             paired_data = {
                 "reference_idx" : reference_idx,
                 "reference_pose" : seq_info.views[reference_idx].pose.cpu().detach().numpy(),
                 "reference_focal" : seq_info.views[reference_idx].focal,
-                "reference_image" : ref_image,
+                "reference_image" : ref_image, # (H, W, 3) numpy
                 "target_idx" : idx,
                 "target_pose" : seq_info.views[idx].pose.cpu().detach().numpy(),
                 "target_focal" : seq_info.views[idx].focal,
-                "warped_image" : warped_image,
-                "warped_mask" : seq_info.views[idx].mask,
+                "warped_image" : warped_image, # (H, W, 3) numpy
+                "warped_mask" : seq_info.views[idx].mask, # (1, 1, H, W)
+                "coords" : coords, # (H, W, 8)
+                "warped_coords" : warped_coords, # (1, 8, H, W)
             }
             paired_images.append(paired_data)
 
@@ -189,6 +175,8 @@ class TempPairedDataset(PairedDataset):
     def __getitem__(self, idx):
         ref_idx = self.paired_images[idx]["reference_idx"]
         target_idx = self.paired_images[idx]["target_idx"]
+        coords = self.paired_images[idx]["coords"]
+        warped_coords = self.paired_images[idx]["warped_coords"]
 
         try:
             img_target = np.zeros((int(self.target_res),int(self.target_res),3)) -1.0
