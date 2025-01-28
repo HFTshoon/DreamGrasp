@@ -75,9 +75,25 @@ def compute_optical_flow(P, R_source, T_source, K_source, R_query, T_query, K_qu
     
     return flow, depth_query
 
+def get_warped_coords(coords, flow, depth):
+    h, w = coords.shape[0], coords.shape[1]
+    coords = rearrange(coords, 'h w c -> c h w').unsqueeze(0) # (1, 2, H, W)
+    flow = rearrange(flow, 'h w c -> c h w').unsqueeze(0) # (1, 2, H, W)
+
+    # importance weight based on depth
+    importance = 0.5 / depth
+    importance -= importance.min()
+    importance /= importance.max() + 1e-6
+    importance = importance * 10 - 10
+    importance = importance.reshape(h, w, 1)
+    importance = rearrange(importance, 'h w c -> c h w').unsqueeze(0)
+    warped_coords = splatting_function('softmax', coords, flow, importance, eps=1e-6)
+    return warped_coords
+
+
 def warp_reference(seq_info):
     os.makedirs(os.path.join(seq_info.project_dir, f"warp_stage{seq_info.cur_stage}"), exist_ok=True)
-    os.makedirs(os.path.join(seq_info.project_dir, f"mask_stage{seq_info.cur_stage}"), exist_ok=True)
+    # os.makedirs(os.path.join(seq_info.project_dir, f"mask_stage{seq_info.cur_stage}"), exist_ok=True)
 
     h,w = seq_info.default_h, seq_info.default_w
 
@@ -86,17 +102,30 @@ def warp_reference(seq_info):
         if seq_info.reference[query_idx] != -1:
             known_area_ratio[query_idx] = 1
     
-        ref_images = []
-        ref_flows = []
-        ref_depths = []
+        ref_idx = []
+        ref_candidates = []
         for idx in range(seq_info.length):
             if query_idx == idx:
                 continue
-            
+
             if seq_info.reference[idx] == -1:
                 continue
-            
 
+            ref_candidates.append((seq_info.pair_angles[query_idx, idx], idx))
+        ref_candidates.sort(key=lambda x: x[0])
+        ref_idx += [candidate[1] for candidate in ref_candidates[:5]]            
+
+        ref_images = []
+        ref_flows = []
+        ref_depths = []
+        # for idx in range(seq_info.length):
+        #     if query_idx == idx:
+        #         continue
+            
+        #     if seq_info.reference[idx] == -1:
+        #         continue
+            
+        for idx in ref_idx:
             ref_image = seq_info.views[idx].image
             flow, depth = seq_info.get_flow_query_from_reference(query_idx, idx)
 
@@ -123,8 +152,8 @@ def warp_reference(seq_info):
             warped = rearrange(warped[0], 'c h w -> h w c').detach().cpu().numpy()
             warped = ((warped + 1) * 127.5).astype(np.uint8)
             mask = rearrange(mask[0], 'c h w -> h w c').detach().cpu().numpy()
-            cv2.imwrite(os.path.join(seq_info.project_dir, f"warp_stage{seq_info.cur_stage}", f"{query_idx}_{idx}.png"), cv2.cvtColor(warped, cv2.COLOR_RGB2BGR))
-            cv2.imwrite(os.path.join(seq_info.project_dir, f"mask_stage{seq_info.cur_stage}", f"{query_idx}_{idx}.png"), (1-mask)*255)
+            # cv2.imwrite(os.path.join(seq_info.project_dir, f"warp_stage{seq_info.cur_stage}", f"{query_idx}_{idx}.png"), cv2.cvtColor(warped, cv2.COLOR_RGB2BGR))
+            # cv2.imwrite(os.path.join(seq_info.project_dir, f"mask_stage{seq_info.cur_stage}", f"{query_idx}_{idx}.png"), (1-mask)*255)
 
         ref_cnt = len(ref_images)
 
@@ -162,7 +191,7 @@ def warp_reference(seq_info):
         warped = ((warped + 1) * 127.5).astype(np.uint8)
         mask = rearrange(mask[0], 'c h w -> h w c').detach().cpu().numpy()
         cv2.imwrite(os.path.join(seq_info.project_dir, f"warp_stage{seq_info.cur_stage}", f"stacked_{query_idx}.png"), cv2.cvtColor(warped, cv2.COLOR_RGB2BGR))
-        cv2.imwrite(os.path.join(seq_info.project_dir, f"mask_stage{seq_info.cur_stage}", f"stacked_{query_idx}.png"), (1-mask)*255)
+        # cv2.imwrite(os.path.join(seq_info.project_dir, f"mask_stage{seq_info.cur_stage}", f"stacked_{query_idx}.png"), (1-mask)*255)
 
     plt.figure()
     x = np.arange(len(known_area_ratio))
