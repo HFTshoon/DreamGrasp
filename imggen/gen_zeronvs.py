@@ -1,12 +1,17 @@
 import os
 import yaml
 import glob
+from functools import partial
 
 from PIL import Image
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-from accelerate import Accelerator
+
+from safetensors.torch import load_model
+# from accelerate import Accelerator, DistributedDataParallelKwargs
+
+from minlora import add_lora, get_lora_params, LoRAParametrization
 
 # add sys path for dust3r
 import sys
@@ -14,15 +19,35 @@ sys.path.append("imggen/megascenes")
 from ldm.util import instantiate_from_config
 from ldm.logger import ImageLogger
 from dataloader import TempPairedDataset
-from accelerate import Accelerator
 
 def load_gen_model(output_dir, model_dir, model_iteration, device):
     config_file = yaml.safe_load(open("imggen/megascenes/configs/warp_plus_pose/config.yaml"))
     train_configs = config_file.get('training', {})
     model = instantiate_from_config(config_file['model']).eval()
     img_logger = ImageLogger(log_directory=output_dir, log_images_kwargs=train_configs['log_images_kwargs'])
-    accelerator = Accelerator()
-    model = accelerator.prepare(model)
+    
+    # accelerator = Accelerator()
+    # model = accelerator.prepare(model)
+
+    # ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
+    # accelerator = Accelerator(kwargs_handlers=[ddp_kwargs], gradient_accumulation_steps=1, log_with="wandb") 
+    # accelerator.init_trackers(
+    #     project_name=train_configs['project'], config=config_file,
+    #     init_kwargs={ "wandb": { "name": train_configs['exp_name'], 'mode': "disabled" } }
+    # )
+    # model = accelerator.prepare(model)
+
+    lora_config = {
+        torch.nn.Embedding: {
+            "weight": partial(LoRAParametrization.from_embedding, rank=16)
+        },
+        torch.nn.Linear: {
+            "weight": partial(LoRAParametrization.from_linear, rank=16)
+        },
+        torch.nn.Conv2d: {
+            "weight": partial(LoRAParametrization.from_conv2d, rank=16)
+        }
+    }
 
     if model_iteration is None:
         saved_checkpoints = glob.glob(os.path.join(model_dir, 'iter*'))
@@ -35,10 +60,30 @@ def load_gen_model(output_dir, model_dir, model_iteration, device):
         model_path = os.path.join(model_dir, f'iter_{model_iteration}')
     
     print("Loading model from", model_path)
-    accelerator.load_state(model_path)
+    load_model(model, os.path.join(model_path, "model.safetensors"))
+    # accelerator.load_state(model_path)
+
+    lora_params_cnt = 0
+    print("Adding LoRA to model")
+    for name, module in model.model.diffusion_model.named_modules():
+        if name.endswith('transformer_blocks'):
+            add_lora(module, lora_config=lora_config)
+    lora_params_cnt += sum(p.numel() for p in get_lora_params(model.model.diffusion_model))
+
+    # print("Adding LoRA to cond_stage_model")
+    # for name, module in model.cond_stage_model.named_modules():
+    #     add_lora(module, lora_config=lora_config)
+
+    for name, module in model.cc_projection.named_modules():
+        add_lora(module, lora_config=lora_config)
+    lora_params_cnt += sum(p.numel() for p in get_lora_params(model.cc_projection))
+
+    print(f"LoRA params count: {lora_params_cnt}")
+
+    model = model.to(device)
 
     return {
-        "accelerator": accelerator,
+        # "accelerator": accelerator,
         "model": model,
         "model_path": model_path,
         "img_logger": img_logger,
@@ -123,7 +168,7 @@ def choose_idx_to_generate(seq_info, known_area_ratio):
     return generate_idx
 
 def generate_images(gen_model, seq_info, generate_idx):
-    accelerator = gen_model["accelerator"]
+    # accelerator = gen_model["accelerator"]
     model = gen_model["model"]
     img_logger = gen_model["img_logger"]
     model_iteration = gen_model["model_iteration"]
@@ -139,7 +184,7 @@ def generate_images(gen_model, seq_info, generate_idx):
         dataset, batch_size=1, num_workers=4,
         drop_last=False, shuffle=False, persistent_workers=False, pin_memory=False
     )
-    dataloader = accelerator.prepare(dataloader)
+    # dataloader = accelerator.prepare(dataloader)
 
     for ii, batch in enumerate(dataloader):
         batch, dataidx, ref_idx, target_idx = batch

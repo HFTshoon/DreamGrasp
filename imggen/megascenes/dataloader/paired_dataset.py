@@ -150,7 +150,7 @@ class TempPairedDataset(PairedDataset):
             warped_image = (seq_info.views[idx].warped.cpu().detach().numpy() + 1) * 127.5
             warped_image = np.transpose(warped_image[0], (1,2,0)).astype(np.uint8)
 
-            coords, warped_coords = seq_info.get_warped_coords_query_from_reference(idx, reference_idx)
+            # coords, warped_coords = seq_info.get_warped_coords_query_from_reference(idx, reference_idx)
             
             paired_data = {
                 "reference_idx" : reference_idx,
@@ -162,8 +162,8 @@ class TempPairedDataset(PairedDataset):
                 "target_focal" : seq_info.views[idx].focal,
                 "warped_image" : warped_image, # (H, W, 3) numpy
                 "warped_mask" : seq_info.views[idx].mask, # (1, 1, H, W)
-                "coords" : coords, # (H, W, 8)
-                "warped_coords" : warped_coords, # (1, 8, H, W)
+                # "coords" : coords, # (H, W, 8)
+                # "warped_coords" : warped_coords, # (1, 8, H, W)
             }
             paired_images.append(paired_data)
 
@@ -175,11 +175,146 @@ class TempPairedDataset(PairedDataset):
     def __getitem__(self, idx):
         ref_idx = self.paired_images[idx]["reference_idx"]
         target_idx = self.paired_images[idx]["target_idx"]
-        coords = self.paired_images[idx]["coords"]
-        warped_coords = self.paired_images[idx]["warped_coords"]
+        # coords = self.paired_images[idx]["coords"]
+        # warped_coords = self.paired_images[idx]["warped_coords"]
 
         try:
             img_target = np.zeros((int(self.target_res),int(self.target_res),3)) -1.0
+            img_ref = Image.fromarray(self.paired_images[idx]["reference_image"])
+            img_ref = resize_with_padding(img_ref, int(self.target_res), black=False) /127.5-1.0 
+        except Exception as error:
+            print("exception when loading image:", error)
+            img_target = np.zeros((int(self.target_res),int(self.target_res),3)) -1.0
+            img_ref = np.zeros((int(self.target_res),int(self.target_res),3)) -1.0
+
+
+        if self.pose_cond not in ['zeronvs_baseline'] or self.split!='train':
+            try:
+                high_warped_depth = Image.fromarray(self.paired_images[idx]["warped_image"])
+                warped_depth = resize_with_padding(high_warped_depth, int(self.target_res) // 8, black=False) /127.5-1.0 
+                high_warped_depth = resize_with_padding(high_warped_depth, int(self.target_res), black=False) /127.5-1.0 
+            except Exception as error:
+                print("exception when loading warped depth:", error)
+                high_warped_depth = np.zeros((int(self.target_res),int(self.target_res),3)) -1.0
+                warped_depth = np.zeros((int(self.target_res) // 8, int(self.target_res) // 8, 3)) -1.0
+
+        dict1_extrinsics = self.paired_images[idx]['target_pose']
+        dict2_extrinsics = self.paired_images[idx]['reference_pose']
+        height = self.target_res
+        width = self.target_res
+
+        assert self.paired_images[idx]['target_focal'] == self.paired_images[idx]['reference_focal']
+        focal_length = self.paired_images[idx]['target_focal'] 
+        cx = self.target_res / 2.0
+        cy = self.target_res / 2.0
+        
+        sensor_diagonal = math.sqrt(width**2 + height**2)
+        diagonal_fov = 2 * math.atan(sensor_diagonal / (2 * focal_length)) # assuming fx = fy
+
+        ext_ref = np.linalg.inv(dict2_extrinsics)
+        ext_target = np.linalg.inv(dict1_extrinsics) # using c2w, following zeronvs
+
+        scales = 1.0 # default scale
+
+        fov = torch.tensor(diagonal_fov) # target fov, invariant to resizing
+        rel_pose = np.linalg.inv(ext_ref) @ ext_target # 4x4
+
+        # if self.pose_cond in ['warp_plus_pose', 'zeronvs_baseline']:
+        #     depth_ref = np.load( self.imgname_to_depthname(path1) ) # HxW
+        #     scales = np.quantile( depth_ref[::8, ::8].reshape(-1), q=0.2 ) 
+        rel_pose[:3, -1] /= np.clip(scales, a_min=self.scaleclip, a_max=None) # scales preprocessed for faster data loading
+
+        fov_enc = torch.stack( [fov, torch.sin(fov), torch.cos(fov)] )
+        rel_pose = torch.tensor(rel_pose.reshape((16)))
+        rel_pose = torch.cat([rel_pose, fov_enc]).float()
+        
+        # for debug
+        # img_ref = Image.open("imggen/megascenes/quant_eval/apple_test/refimgs/0.png")
+        # img_target = Image.open("imggen/megascenes/quant_eval/apple_test/tarimgs/0.png")
+        # img_ref = resize_with_padding(img_ref, int(self.target_res), black=False) /127.5-1.0 
+        # img_target = resize_with_padding(img_target, int(self.target_res), black=False) /127.5-1.0
+        # high_warped_depth = Image.open("imggen/megascenes/quant_eval/apple_test/masks/0.png")
+        # warped_depth = resize_with_padding(high_warped_depth, int(self.target_res) // 8, black=False) /127.5-1.0 
+        # high_warped_depth = resize_with_padding(high_warped_depth, int(self.target_res), black=False) /127.5-1.0 
+        # rel_pose = torch.Tensor([
+        #     -0.9408, -0.3204,  0.1108,  5.3313,  0.2051, -0.2776,  0.9386,  2.1735,
+        #     -0.2699,  0.9057,  0.3268,  2.4848,  0.0000,  0.0000,  0.0000,  1.0000,
+        #     0.8943,  0.7798,  0.6260])
+                
+        if self.pose_cond == 'warp_plus_pose':
+            retdict = dict(image_target=img_target,  image_ref=img_ref, rel_pose=rel_pose, warped_depth=warped_depth, highwarp=high_warped_depth)
+        elif self.pose_cond == 'zeronvs_baseline':
+            retdict = dict(image_target=img_target,  image_ref=img_ref, rel_pose=rel_pose) # , highwarp=high_warped_depth
+            if self.split!='train':
+                retdict['highwarp'] = high_warped_depth
+    
+        if self.split!='train':
+            return retdict, idx, ref_idx, target_idx
+        return retdict
+
+
+class LoraPairedDataset(TempPairedDataset):
+    def __init__(self, seq_info):
+        self.pose_cond = 'warp_plus_pose'
+        self.split = 'train'
+        self.scaleclip = 1e-7
+
+        assert seq_info.default_h == seq_info.default_w
+        self.target_res = seq_info.default_h
+
+        random.seed(42)
+
+        ref_idx = [idx for idx, ref in enumerate(seq_info.reference) if ref != -1]
+        print("ref_idx: ", ref_idx)
+
+        paired_images = []
+        for idx in ref_idx:
+            overlaps = seq_info.views[idx].overlaps
+            # get biggest overlap
+            reference_idx = overlaps.index(max(overlaps))
+            print(f"Generate image {idx} from reference {reference_idx} ({overlaps[reference_idx]})")
+            
+            ref_image = (seq_info.views[reference_idx].image.cpu().detach().numpy() + 1) * 127.5
+            ref_image = ref_image.astype(np.uint8)
+
+            target_image = (seq_info.views[idx].image.cpu().detach().numpy() + 1) * 127.5
+            target_image = target_image.astype(np.uint8)
+
+            warped_image = (seq_info.views[idx].warped.cpu().detach().numpy() + 1) * 127.5
+            warped_image = np.transpose(warped_image[0], (1,2,0)).astype(np.uint8)
+
+            # coords, warped_coords = seq_info.get_warped_coords_query_from_reference(idx, reference_idx)
+            
+            paired_data = {
+                "reference_idx" : reference_idx,
+                "reference_pose" : seq_info.views[reference_idx].pose.cpu().detach().numpy(),
+                "reference_focal" : seq_info.views[reference_idx].focal,
+                "reference_image" : ref_image, # (H, W, 3) numpy
+                "target_idx" : idx,
+                "target_pose" : seq_info.views[idx].pose.cpu().detach().numpy(),
+                "target_focal" : seq_info.views[idx].focal,
+                "target_image" : target_image, # (H, W, 3) numpy
+                "warped_image" : warped_image, # (H, W, 3) numpy
+                "warped_mask" : seq_info.views[idx].mask, # (1, 1, H, W)
+                # "coords" : coords, # (H, W, 8)
+                # "warped_coords" : warped_coords, # (1, 8, H, W)
+            }
+            paired_images.append(paired_data)
+
+        self.paired_images = paired_images
+    
+    def __len__(self):
+        return len(self.paired_images)
+
+    def __getitem__(self, idx):
+        ref_idx = self.paired_images[idx]["reference_idx"]
+        target_idx = self.paired_images[idx]["target_idx"]
+        # coords = self.paired_images[idx]["coords"]
+        # warped_coords = self.paired_images[idx]["warped_coords"]
+
+        try:
+            img_target = Image.fromarray(self.paired_images[idx]["target_image"])
+            img_target = resize_with_padding(img_target, int(self.target_res), black=False) /127.5-1.0
             img_ref = Image.fromarray(self.paired_images[idx]["reference_image"])
             img_ref = resize_with_padding(img_ref, int(self.target_res), black=False) /127.5-1.0 
         except Exception as error:

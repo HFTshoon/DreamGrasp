@@ -29,7 +29,7 @@ from ldm.models.diffusion.ddim import DDIMSampler
 from ldm.modules.attention import CrossAttention
 
 import ipdb
-from minlora import add_lora, apply_to_lora, disable_lora, enable_lora, get_lora_params, merge_lora, name_is_lora, remove_lora, load_multiple_lora, select_lora
+from minlora import get_lora_params
 
 __conditioning_keys__ = {'concat': 'c_concat',
                          'crossattn': 'c_crossattn',
@@ -893,7 +893,6 @@ class LatentDiffusion(DDPM):
 
        
         ref_img_cond = self.encode_first_stage((ref_image.to(self.device))).mode().detach()
-        # breakpoint()
         if split=='train':
             ref_img_cond*=input_mask
         if warped_depth is None:
@@ -1651,15 +1650,14 @@ class LatentDiffusion(DDPM):
         lr = self.learning_rate
         params = []
         if use_lora:
-            print("Add lora layers to unet")
-            add_lora(self.model.diffusion_model)
             print("Training only unet lora layers")
             params = list(get_lora_params(self.model.diffusion_model))
             opt_list = [{"params": params, "lr": lr}]
 
             if self.has_extra_layer:
                 print("Training lora cc_projection!!")
-                opt_list.append({"params": self.cc_projection.parameters(), "lr": 10. * lr})
+                params_append = list(get_lora_params(self.cc_projection))
+                opt_list.append({"params": params_append, "lr": 10. * lr})
         else:
             if self.unet_trainable == "attn":
                 print("Training only unet attention layers")

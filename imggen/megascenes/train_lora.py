@@ -29,7 +29,7 @@ def main():
 
     os.makedirs(args.exp_dir, exist_ok=True)
 
-    dataset = PairedDataset(pose_cond=train_configs['pose_cond'], split='train', data_dir=args.dataset_dir, category=args.category)
+    dataset = LoraPairedDataset(pose_cond=train_configs['pose_cond'], split='train', data_dir=args.dataset_dir, category=args.category)
     dataset.paired_images = dataset.paired_images[:1]
     print("size of dataset: ", len(dataset))
     dataloader = DataLoader(

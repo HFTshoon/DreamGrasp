@@ -4,6 +4,7 @@ import argparse
 import torch
 
 from recon.recon_3d import recon_3d_init, load_recon_model, recon_3d_incremental
+from imggen.lora import train_lora
 from imggen.gen_zeronvs import generate_images, choose_idx_to_generate, load_gen_model
 from util.seq_info import SeqInfo
 from util.util_data import get_inputs, get_trajectory, visualize_pose
@@ -44,6 +45,8 @@ def main(args, device):
     for i in range(seq_info.required_stage):
         print("Stage", seq_info.cur_stage)
         known_area_ratio = warp_reference(seq_info)
+        if i == 0:
+            gen_model = train_lora(gen_model, seq_info)
         generate_idx = choose_idx_to_generate(seq_info, known_area_ratio)
         generate_images(gen_model, seq_info, generate_idx)
         if i < seq_info.required_stage - 1:
