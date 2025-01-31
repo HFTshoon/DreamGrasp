@@ -30,4 +30,5 @@ CUDA_VISIBLE_DEVICES=3 python test.py -c configs/warp_plus_pose/ -e train_result
 cd ../../
 
 CUDA_VISIBLE_DEVICES=3 python main.py -n doll -m
+CUDA_VISIBLE_DEVICES=0 python main.py -n apple -m --model_dir imggen/megascenes/train_results/apple
 CUDA_VISIBLE_DEVICES=0 python main.py -n doll -m --model_dir imggen/megascenes/train_results/single
