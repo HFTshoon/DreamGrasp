@@ -42,6 +42,14 @@ class GenWarp():
             self.create_embedding_fn()
 
         def create_embedding_fn(self) -> None:
+            # embed_kwargs = {
+            #     'include_input' : True,
+            #     'input_dims' : 2,
+            #     'max_freq_log2' : multires-1,
+            #     'num_freqs' : multires,
+            #     'log_sampling' : True,
+            #     'periodic_fns' : [torch.sin, torch.cos],
+            # }
             embed_fns = []
             d = self.kwargs['input_dims']
             out_dim = 0
@@ -49,8 +57,8 @@ class GenWarp():
                 embed_fns.append(lambda x : x)
                 out_dim += d
 
-            max_freq = self.kwargs['max_freq_log2']
-            N_freqs = self.kwargs['num_freqs']
+            max_freq = self.kwargs['max_freq_log2'] # 1
+            N_freqs = self.kwargs['num_freqs'] # 2
 
             if self.kwargs['log_sampling']:
                 freq_bands = 2.**torch.linspace(0., max_freq, steps=N_freqs)
@@ -177,8 +185,8 @@ class GenWarp():
         embed_kwargs = {
             'include_input' : True,
             'input_dims' : 2,
-            'max_freq_log2' : multires-1,
-            'num_freqs' : multires,
+            'max_freq_log2' : multires-1, # 1
+            'num_freqs' : multires, # 2
             'log_sampling' : True,
             'periodic_fns' : [torch.sin, torch.cos],
         }
