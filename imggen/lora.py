@@ -62,11 +62,7 @@ def train_lora(gen_model, seq_info):
         for _, batch in enumerate(dataloader):
             if local_step == 0: # log image in the beginning for sanity check and comparisons
                 grid = img_logger.log_img(module, batch, global_step, split='test', returngrid='train', has_target=True)
-                # accelerator.wait_for_everyone()
-                # if accelerator.is_main_process:
-                #     grid = img_logger.log_img(module, batch, global_step, split='test', returngrid='train', has_target=True)
-                #     accelerator.log( {"train_table":log_image_table(grid)} )
-
+                
             loss, loss_dict = model(batch)
             progress_bar.set_postfix(loss_dict)
 
@@ -81,21 +77,6 @@ def train_lora(gen_model, seq_info):
             lr = optimizer.param_groups[0]['lr']
             loss_dict.update({'lr': lr}) 
 
-            # with accelerator.accumulate(model):
-            #     loss, loss_dict = model(batch)
-            #     progress_bar.set_postfix(loss_dict)
-
-            #     accelerator.backward(loss)
-            #     optimizer.step()
-            #     scheduler.step()    
-            #     optimizer.zero_grad()
-            #     progress_bar.update(num_processes)
-            #     global_step += num_processes
-            #     local_step += 1
-
-            #     lr = optimizer.param_groups[0]['lr']
-            #     loss_dict.update({'lr': lr}) 
-
             if global_step >= total_iterations:                        
                 grid = img_logger.log_img(module, batch, global_step, split='test', returngrid='train', has_target=True)
                 lora_state_dict = get_lora_state_dict(model)
@@ -106,21 +87,6 @@ def train_lora(gen_model, seq_info):
                 model.eval()
                 gen_model["model"] = model
                 return gen_model
-
-            # if global_step >= total_iterations:
-            #     accelerator.wait_for_everyone()
-            #     if accelerator.is_main_process:                        
-            #         grid = img_logger.log_img(module, batch, global_step, split='test', returngrid='train', has_target=True)
-            #         accelerator.log( {"train_table":log_image_table(grid)} )
-            #     lora_state_dict = get_lora_state_dict(model)
-            #     # save lora state dict
-            #     torch.save(lora_state_dict, os.path.join(exp_dir, "lora_state_dict.pth"))
-            #     breakpoint()
-            #     accelerator.end_training()
-            #     print("Training complete!")
-            #     model.eval()
-            #     gen_model["model"] = model
-            #     return gen_model
 
 
 def log_image_table(grid, test=False):
