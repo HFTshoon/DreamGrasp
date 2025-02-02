@@ -84,10 +84,25 @@ class PairedDataset(Dataset):
                 high_warped_depth = Image.open(warped_image_path) # original warped image with high resolution
                 warped_depth = resize_with_padding(high_warped_depth, int(self.target_res) // 8, black=False) /127.5-1.0 
                 high_warped_depth = resize_with_padding(high_warped_depth, int(self.target_res), black=False) /127.5-1.0 
+
+                if self.pose_cond == 'warp_plus_mask':
+                    high_warped_mask = Image.open(warped_mask_path)
+                    warped_mask = resize_with_padding(high_warped_mask, int(self.target_res) // 8, black=False) /127.5-1.0
+                    high_warped_mask = resize_with_padding(high_warped_mask, int(self.target_res), black=False) /127.5-1.0
+
+                    # combine depth and mask -> (H/8, W/8, 4)
+                    warped_depth = np.concatenate([warped_depth, warped_mask[:,:,0:1]], axis=2)
+                    high_warped_depth = np.concatenate([high_warped_depth, high_warped_mask[:,:,0:1]], axis=2)
+
             except Exception as error:
                 print("exception when loading warped depth:", error, path1, path2, warped_image_path)
-                warped_depth = np.zeros((int(self.target_res) // 8, int(self.target_res) // 8, 3)) -1.0
-                high_warped_depth = np.zeros((int(self.target_res),int(self.target_res),3)) -1.0
+
+                if self.pose_cond == 'warp_plus_mask':
+                    warped_depth = np.zeros((int(self.target_res) // 8, int(self.target_res) // 8, 4)) -1.0
+                    high_warped_depth = np.zeros((int(self.target_res),int(self.target_res),4)) -1.0
+                else:
+                    warped_depth = np.zeros((int(self.target_res) // 8, int(self.target_res) // 8, 3)) -1.0
+                    high_warped_depth = np.zeros((int(self.target_res),int(self.target_res),3)) -1.0
 
         dict1_extrinsics = pose_info[query_idx]
         dict2_extrinsics = pose_info[ref_idx]

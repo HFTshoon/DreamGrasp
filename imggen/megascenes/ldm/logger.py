@@ -144,6 +144,8 @@ class ImageLogger:
         if warpeddepth is None:
             if 'highwarp' in batch:
                 warpeddepth = batch['highwarp'].permute(0,3,1,2).detach().cpu() 
+                if warpeddepth.shape[1] == 4: # warp_plus_mask
+                    warpeddepth = warpeddepth[:, :3, :, :]
         return self.log_local(split, images, epoch, foldername, returngrid, warpeddepth, has_target, returnimg, savegrid)
 
 
