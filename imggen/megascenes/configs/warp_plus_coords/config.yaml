@@ -8,9 +8,9 @@
 
 training:
   project: megascenes_nvs
-  exp_name: 'warp_plus_pose'
+  exp_name: 'warp_plus_coords'
   learning_rate: 1e-4
-  pose_cond: warp_plus_pose
+  pose_cond: warp_plus_coords
   gradient_accumulation_steps: 1
   pos_enc: null # add other data configs here
   log_images_kwargs:

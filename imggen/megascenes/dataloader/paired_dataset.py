@@ -16,6 +16,9 @@ from torch.utils.data import Dataset
 import math
 import hashlib
 
+from util.util_preprocess import make_pts3d
+from util.util_warp import compute_optical_flow, get_warped_coords
+
 class PairedDataset(Dataset):
     def __init__(self, target_res=512, split='train', pose_cond='warp_plus_pose', data_dir='data', category='apple'):
         
@@ -63,7 +66,6 @@ class PairedDataset(Dataset):
 
         pose_info = np.load(os.path.join(self.data_dir, category, seq_name, f"poses_{self.split}.npy"), allow_pickle=True)
         focal_info = np.load(os.path.join(self.data_dir, category, seq_name, f"focals_{self.split}.npy"), allow_pickle=True)
-        # pps_length = np.load(os.path.join(self.data_dir, category, seq_name, f"pps_{self.split}.npy"), allow_pickle=True)
 
         try:
             path1 = os.path.join(self.data_dir, category, seq_name, "images", "frame%06d.jpg" % query_image_num)
@@ -76,7 +78,6 @@ class PairedDataset(Dataset):
             print("exception when loading image: ", error, path1, path2)
             img_ref = np.zeros((int(self.target_res),int(self.target_res),3)) -1.0
             img_target = np.zeros((int(self.target_res),int(self.target_res),3)) -1.0
-
 
         if self.pose_cond not in ['zeronvs_baseline'] or self.split!='train':
             try:
@@ -115,8 +116,61 @@ class PairedDataset(Dataset):
         fov_enc = torch.stack( [fov, torch.sin(fov), torch.cos(fov)] )
         rel_pose = torch.tensor(rel_pose.reshape((16)))
         rel_pose = torch.cat([rel_pose, fov_enc]).float()
-                
-        if self.pose_cond == 'warp_plus_pose':
+
+        if self.pose_cond in ["warp_plus_coords"]:
+            pps_info = np.load(os.path.join(self.data_dir, category, seq_name, f"pps_{self.split}.npy"), allow_pickle=True)
+            
+            image_cnt = len(pose_info)
+            depthmaps_info = np.load(os.path.join(self.data_dir, category, seq_name, f'depthmaps_{self.split}.npy'))
+            depthmaps_info = depthmaps_info[:image_cnt, :, :]
+            pts3d = make_pts3d(depthmaps_info, pose_info, focal_info, pps_info)
+            h, w = depthmaps_info[0].shape
+            grid = torch.stack(torch.meshgrid(torch.arange(0, h), torch.arange(0, w)), dim=-1).float()
+            coords = torch.stack((grid[..., 0]/h, grid[..., 1]/w), dim=-1).to(self.device) # (H, W, 2)
+            freq_bands = 2.**torch.linspace(0., 1., steps=2)
+            peridoic_funcs = [torch.sin, torch.cos]
+            embed_fns = []
+            for freq in freq_bands:
+                for p_fn in peridoic_funcs:
+                    embed_fns.append(lambda x, p_fn=p_fn, freq=freq: p_fn(x * freq))
+            
+            query_info_path = os.path.join(self.data_dir, category, 'images', f'frame{query_image_num:06d}.npz')
+            query_info = np.load(query_info_path)
+            query_focal = focal_info[query_idx]
+            query_pp = pps_info[query_idx]
+            query_pose = pose_info[query_idx]
+
+            ref_info_path = os.path.join(self.data_dir, category, 'images', f'frame{ref_image_num:06d}.npz')
+            ref_info = np.load(ref_info_path)
+            ref_focal = focal_info[ref_idx]
+            ref_pp = pps_info[ref_idx]
+            ref_pose = pose_info[ref_idx]
+
+            query_R = query_pose[:3, :3]
+            query_T = query_pose[:3, 3]
+            query_K = torch.tensor([
+                    [query_focal[0], 0, query_pp[0]], 
+                    [0, query_focal[0], query_pp[1]], 
+                    [0, 0, 1]
+                ]).float()
+            ref_R = ref_pose[:3, :3]
+            ref_T = ref_pose[:3, 3]
+            ref_K = torch.tensor([
+                    [ref_focal[0], 0, ref_pp[0]], 
+                    [0, ref_focal[0], ref_pp[1]], 
+                    [0, 0, 1]
+                ]).float()
+            
+            ref_pts = pts3d[ref_idx].reshape(-1, 3)
+            ref_pts = torch.tensor(ref_pts).float()
+            flow, depth = compute_optical_flow(ref_pts, ref_R, ref_T, ref_K, query_R, query_T, query_K)
+            flow = flow.reshape(h, w, 2)
+            coords = torch.cat([fn(coords) for fn in embed_fns], dim=-1) # (H, W, 8)
+            warped_coords = get_warped_coords(coords, flow, depth)        
+
+        if self.pose_cond == 'warp_plus_coords':
+            retdict = dict(image_target=img_target,  image_ref=img_ref, rel_pose=rel_pose, warped_depth=warped_depth, highwarp=high_warped_depth, coords=coords, warped_coords=warped_coords)
+        elif self.pose_cond == 'warp_plus_pose':
             retdict = dict(image_target=img_target,  image_ref=img_ref, rel_pose=rel_pose, warped_depth=warped_depth, highwarp=high_warped_depth)
         elif self.pose_cond == 'zeronvs_baseline':
             retdict = dict(image_target=img_target,  image_ref=img_ref, rel_pose=rel_pose) # , highwarp=high_warped_depth
@@ -128,8 +182,8 @@ class PairedDataset(Dataset):
         return retdict
 
 class TempPairedDataset(PairedDataset):
-    def __init__(self, seq_info, generate_idx):
-        self.pose_cond = 'warp_plus_pose'
+    def __init__(self, seq_info, generate_idx, pose_cond = "warp_plus_pose"):
+        self.pose_cond = pose_cond
         self.split = 'test'
         self.scaleclip = 1e-7
 
@@ -150,8 +204,6 @@ class TempPairedDataset(PairedDataset):
             warped_image = (seq_info.views[idx].warped.cpu().detach().numpy() + 1) * 127.5
             warped_image = np.transpose(warped_image[0], (1,2,0)).astype(np.uint8)
 
-            # coords, warped_coords = seq_info.get_warped_coords_query_from_reference(idx, reference_idx)
-            
             paired_data = {
                 "reference_idx" : reference_idx,
                 "reference_pose" : seq_info.views[reference_idx].pose.cpu().detach().numpy(),
@@ -162,9 +214,13 @@ class TempPairedDataset(PairedDataset):
                 "target_focal" : seq_info.views[idx].focal,
                 "warped_image" : warped_image, # (H, W, 3) numpy
                 "warped_mask" : seq_info.views[idx].mask, # (1, 1, H, W)
-                # "coords" : coords, # (H, W, 8)
-                # "warped_coords" : warped_coords, # (1, 8, H, W)
             }
+
+            if self.pose_cond == "warp_plus_coords":
+                coords, warped_coords = seq_info.get_warped_coords_query_from_reference(idx, reference_idx)
+                paired_data["coords"] = coords
+                paired_data["warped_coords"] = warped_coords
+
             paired_images.append(paired_data)
 
         self.paired_images = paired_images
@@ -175,8 +231,6 @@ class TempPairedDataset(PairedDataset):
     def __getitem__(self, idx):
         ref_idx = self.paired_images[idx]["reference_idx"]
         target_idx = self.paired_images[idx]["target_idx"]
-        # coords = self.paired_images[idx]["coords"]
-        # warped_coords = self.paired_images[idx]["warped_coords"]
 
         try:
             img_target = np.zeros((int(self.target_res),int(self.target_res),3)) -1.0
@@ -240,7 +294,11 @@ class TempPairedDataset(PairedDataset):
         #     -0.9408, -0.3204,  0.1108,  5.3313,  0.2051, -0.2776,  0.9386,  2.1735,
         #     -0.2699,  0.9057,  0.3268,  2.4848,  0.0000,  0.0000,  0.0000,  1.0000,
         #     0.8943,  0.7798,  0.6260])
-                
+
+        if self.pose_cond == "warp_plus_coords":
+            coords = self.paired_images[idx]["coords"]
+            warped_coords = self.paired_images[idx]["warped_coords"]
+            retdict = dict(image_target=img_target,  image_ref=img_ref, rel_pose=rel_pose, warped_depth=warped_depth, highwarp=high_warped_depth, coords=coords, warped_coords=warped_coords)
         if self.pose_cond == 'warp_plus_pose':
             retdict = dict(image_target=img_target,  image_ref=img_ref, rel_pose=rel_pose, warped_depth=warped_depth, highwarp=high_warped_depth)
         elif self.pose_cond == 'zeronvs_baseline':
@@ -254,8 +312,8 @@ class TempPairedDataset(PairedDataset):
 
 
 class LoraPairedDataset(TempPairedDataset):
-    def __init__(self, seq_info):
-        self.pose_cond = 'warp_plus_pose'
+    def __init__(self, seq_info, pose_cond = "warp_plus_pose"):
+        self.pose_cond = pose_cond
         self.split = 'train'
         self.scaleclip = 1e-7
 
@@ -283,8 +341,6 @@ class LoraPairedDataset(TempPairedDataset):
             warped_image = (seq_info.views[idx].warped.cpu().detach().numpy() + 1) * 127.5
             warped_image = np.transpose(warped_image[0], (1,2,0)).astype(np.uint8)
 
-            # coords, warped_coords = seq_info.get_warped_coords_query_from_reference(idx, reference_idx)
-            
             paired_data = {
                 "reference_idx" : reference_idx,
                 "reference_pose" : seq_info.views[reference_idx].pose.cpu().detach().numpy(),
@@ -296,9 +352,13 @@ class LoraPairedDataset(TempPairedDataset):
                 "target_image" : target_image, # (H, W, 3) numpy
                 "warped_image" : warped_image, # (H, W, 3) numpy
                 "warped_mask" : seq_info.views[idx].mask, # (1, 1, H, W)
-                # "coords" : coords, # (H, W, 8)
-                # "warped_coords" : warped_coords, # (1, 8, H, W)
             }
+
+            if self.pose_cond == "warp_plus_coords":
+                coords, warped_coords = seq_info.get_warped_coords_query_from_reference(idx, reference_idx)
+                paired_data["coords"] = coords
+                paired_data["warped_coords"] = warped_coords
+
             paired_images.append(paired_data)
 
         self.paired_images = paired_images
@@ -309,8 +369,6 @@ class LoraPairedDataset(TempPairedDataset):
     def __getitem__(self, idx):
         ref_idx = self.paired_images[idx]["reference_idx"]
         target_idx = self.paired_images[idx]["target_idx"]
-        # coords = self.paired_images[idx]["coords"]
-        # warped_coords = self.paired_images[idx]["warped_coords"]
 
         try:
             img_target = Image.fromarray(self.paired_images[idx]["target_image"])
@@ -375,8 +433,12 @@ class LoraPairedDataset(TempPairedDataset):
         #     -0.9408, -0.3204,  0.1108,  5.3313,  0.2051, -0.2776,  0.9386,  2.1735,
         #     -0.2699,  0.9057,  0.3268,  2.4848,  0.0000,  0.0000,  0.0000,  1.0000,
         #     0.8943,  0.7798,  0.6260])
-                
-        if self.pose_cond == 'warp_plus_pose':
+
+        if self.pose_cond == "warp_plus_coords":
+            coords = self.paired_images[idx]["coords"]
+            warped_coords = self.paired_images[idx]["warped_coords"]
+            retdict = dict(image_target=img_target,  image_ref=img_ref, rel_pose=rel_pose, warped_depth=warped_depth, highwarp=high_warped_depth, coords=coords, warped_coords=warped_coords)
+        elif self.pose_cond == 'warp_plus_pose':
             retdict = dict(image_target=img_target,  image_ref=img_ref, rel_pose=rel_pose, warped_depth=warped_depth, highwarp=high_warped_depth)
         elif self.pose_cond == 'zeronvs_baseline':
             retdict = dict(image_target=img_target,  image_ref=img_ref, rel_pose=rel_pose) # , highwarp=high_warped_depth

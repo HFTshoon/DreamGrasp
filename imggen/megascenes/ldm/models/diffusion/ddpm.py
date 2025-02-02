@@ -809,11 +809,21 @@ class LatentDiffusion(DDPM):
         if colorhists is not None:
             colorhists = batch['colorhists'].float().to(self.device) # target then reference
 
-
         depthmap = batch.get('depthmap', None)
         if depthmap is not None:
             depthmap = depthmap.float().to(self.device)
             depthmap = depthmap.reshape(depthmap.shape[0], -1)
+
+        breakpoint()
+        coords = batch.get('coords', None)
+        if coords is not None:
+            coords = coords.to(self.device)
+            coords = coords.reshape(coords.shape[0], -1)
+        
+        warped_coords = batch.get('warped_coords', None)
+        if warped_coords is not None:
+            warped_coords = warped_coords.to(self.device)
+            warped_coords = warped_coords.reshape(warped_coords.shape[0], -1)
 
         #ipdb.set_trace()
         
