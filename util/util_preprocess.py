@@ -19,7 +19,9 @@ except AttributeError:
 
 # add sys path for dust3r
 import sys
-sys.path.append("recon")
+HERE_PATH = os.path.normpath(os.path.dirname(__file__))
+RECON_REPO_PATH = os.path.normpath(os.path.join(HERE_PATH, '../recon'))
+sys.path.append(RECON_REPO_PATH)
 from dust3r.utils.geometry import xy_grid, opencv_to_colmap_intrinsics, colmap_to_opencv_intrinsics
 
 class ImageList:

@@ -787,14 +787,22 @@ class LatentDiffusion(DDPM):
         
         # batch dict keys: image_target, txt, image_ref, rel_pose, depthmap, warped_depth
         #prompt = batch['txt']
-        ref_image = super().get_input(batch, 'image_ref').to(self.device)
+        ref_image = super().get_input(batch, 'image_ref').to(self.device) # B, 3, H, W
         warped_depth = batch.get('warped_depth', None)
         if warped_depth is not None:
-            warped_depth = super().get_input(batch, 'warped_depth').to(self.device)
-            if warped_depth.shape[1] == 9 and self.concat_conv is None:
-                warped_depth = torch.nn.functional.interpolate(warped_depth, (32, 32))
-            elif self.concat_conv is not None:
-                warped_depth = self.concat_conv(warped_depth)
+            warped_depth = super().get_input(batch, 'warped_depth').to(self.device) # B, 3, H/8, W/8
+            # if warped_depth.shape[1] == 9 and self.concat_conv is None:
+            #     warped_depth = torch.nn.functional.interpolate(warped_depth, (32, 32))
+            # elif self.concat_conv is not None:
+            #     warped_depth = self.concat_conv(warped_depth)
+
+        coords = batch.get('coords', None)
+        if coords is not None:
+            coords = super().get_input(batch, 'coords').to(self.device)
+        
+        warped_coords = batch.get('warped_coords', None)
+        if warped_coords is not None:
+            warped_coords = super().get_input(batch, 'warped_coords').to(self.device)
 
         pc_motion = batch.get('motion', None)
         if pc_motion is not None:
@@ -814,17 +822,6 @@ class LatentDiffusion(DDPM):
             depthmap = depthmap.float().to(self.device)
             depthmap = depthmap.reshape(depthmap.shape[0], -1)
 
-        breakpoint()
-        coords = batch.get('coords', None)
-        if coords is not None:
-            coords = coords.to(self.device)
-            coords = coords.reshape(coords.shape[0], -1)
-        
-        warped_coords = batch.get('warped_coords', None)
-        if warped_coords is not None:
-            warped_coords = warped_coords.to(self.device)
-            warped_coords = warped_coords.reshape(warped_coords.shape[0], -1)
-
         #ipdb.set_trace()
         
         if bs is not None:
@@ -841,6 +838,10 @@ class LatentDiffusion(DDPM):
                 rel_pose = rel_pose[:bs]
             if colorhists is not None:
                 colorhists = colorhists[:bs]
+            if coords is not None:
+                coords = coords[:bs]
+            if warped_coords is not None:
+                warped_coords = warped_coords[:bs]
 
         cond = {}
 
@@ -908,7 +909,10 @@ class LatentDiffusion(DDPM):
         if warped_depth is None:
             cond["c_concat"] = [ref_img_cond]
         else:
-            concat_cond = torch.cat( (ref_img_cond, warped_depth), dim=1 )
+            if coords is None or warped_coords is None:
+                concat_cond = torch.cat( (ref_img_cond, warped_depth), dim=1 )
+            else:
+                concat_cond = torch.cat( (ref_img_cond, warped_depth, coords, warped_coords), dim=1 )
             cond["c_concat"] = [concat_cond]
         
         out = [z, cond]
