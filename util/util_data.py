@@ -4,6 +4,7 @@ import torch
 
 import numpy as np
 import imageio.v2 as imageio
+from PIL import Image
 import matplotlib.pyplot as plt
 
 from util.util_pose import generate_smooth_camera_path
@@ -24,6 +25,31 @@ def get_inputs(input_dir, device):
     image_paths.sort()
     print(image_paths)
     assert len(image_paths) > 1, "Number of images should be more than 1."
+
+    perform_resizing = False
+    for image_path in image_paths:
+        image = imageio.imread(image_path)
+        # check if the image is 512x512
+        h, w = image.shape[:2]
+        if h != 512 or w != 512:
+            perform_resizing = True
+            break
+
+    if perform_resizing:
+        print("Images are not 512x512. Will resize to 512x512.")
+        os.makedirs(os.path.join(input_dir, "ori"), exist_ok=True)
+        for i, image_path in enumerate(image_paths):
+            image_name = image_path.split("/")[-1]
+            os.system(f"cp {image_path} {os.path.join(input_dir, 'ori', image_name)}")
+            # Get biggest square and resize to 512x512
+            image = imageio.imread(image_path)
+            h, w = image.shape[:2]
+            if h > w:
+                image = image[h//2-w//2:h//2+w//2]
+            elif h < w:
+                image = image[:,w//2-h//2:w//2+h//2]
+            image = Image.fromarray(image).resize((512, 512), Image.BILINEAR)
+            image.save(image_path)
 
     images = []
     for image_path in image_paths:
@@ -128,14 +154,14 @@ def get_trajectory(extrinsics, input_dir, length=20):
     return trajectory, reference
     
 def visualize_pose(extrinsics, trajectory, save_dir):
-    visualizer_ext = CameraPoseVisualizer([-3, 3], [-3, 3], [0, 3])
+    visualizer_ext = CameraPoseVisualizer([-1, 1], [-1, 1], [0, 1])
     for i in range(len(extrinsics)):
-        visualizer_ext.extrinsic2pyramid(extrinsics[i].detach().cpu().numpy(), plt.cm.rainbow(i / len(extrinsics)), focal_len_scaled=1)
+        visualizer_ext.extrinsic2pyramid(extrinsics[i].detach().cpu().numpy(), plt.cm.rainbow(i / len(extrinsics)), focal_len_scaled=0.25)
     plt.title('Extrinsics')
     plt.savefig(os.path.join(save_dir, "vis_extrinsics.png"))
 
-    visualizer_trj = CameraPoseVisualizer([-3, 3], [-3, 3], [0, 3])
+    visualizer_trj = CameraPoseVisualizer([-1, 1], [-1, 1], [0, 1])
     for i in range(len(trajectory)):
-        visualizer_trj.extrinsic2pyramid(trajectory[i].detach().cpu().numpy(), plt.cm.rainbow(i / len(trajectory)), focal_len_scaled=1)
+        visualizer_trj.extrinsic2pyramid(trajectory[i].detach().cpu().numpy(), plt.cm.rainbow(i / len(trajectory)), focal_len_scaled=0.25)
     plt.title('Trajectory')
     plt.savefig(os.path.join(save_dir, "vis_trajectory.png"))

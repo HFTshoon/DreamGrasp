@@ -36,7 +36,7 @@ def make_paired_data(category_name, category_dir, category_selected_sequences_in
     for seq_name in tqdm(category_seq_name):
         category_seq_index = category_selected_sequences_info[seq_name]
         seq_dir = os.path.join(category_dir, seq_name)
-        warped_dir = os.path.join(seq_dir, 'warped_2')
+        warped_dir = os.path.join(seq_dir, 'warped')
         os.makedirs(warped_dir, exist_ok=True)
 
         image_cnt = len(category_seq_index)
@@ -207,9 +207,9 @@ if __name__ == "__main__":
     else:
         categories = [args.category]
 
-    # for split in ['train', 'test']:
-    for split in ['train']:
-        paired_data_path = os.path.join(args.preprocess_dir, f'paired_data_{split}_2.json')
+    for split in ['train', 'test']:
+    # for split in ['train']:
+        paired_data_path = os.path.join(args.preprocess_dir, f'paired_data_{split}.json')
         if os.path.isfile(paired_data_path):
             continue
 
@@ -220,7 +220,7 @@ if __name__ == "__main__":
 
         for category in categories:
             category_dir = os.path.join(args.preprocess_dir, category)
-            category_paired_data_path = os.path.join(category_dir, f'paired_data_{split}_2.json')
+            category_paired_data_path = os.path.join(category_dir, f'paired_data_{split}.json')
             if os.path.isfile(category_paired_data_path):
                 with open(category_paired_data_path, 'r') as f:
                     category_paired_data = json.load(f)
