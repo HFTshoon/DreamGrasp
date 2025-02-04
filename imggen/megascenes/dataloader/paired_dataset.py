@@ -229,6 +229,9 @@ class TempPairedDataset(PairedDataset):
             warped_image = (seq_info.views[idx].warped.cpu().detach().numpy() + 1) * 127.5
             warped_image = np.transpose(warped_image[0], (1,2,0)).astype(np.uint8)
 
+            warped_mask = (seq_info.views[idx].mask.cpu().detach().numpy()) * 255
+            warped_mask = np.transpose(warped_mask[0], (1,2,0)).astype(np.uint8)
+
             paired_data = {
                 "reference_idx" : reference_idx,
                 "reference_pose" : seq_info.views[reference_idx].pose.cpu().detach().numpy(),
@@ -238,7 +241,7 @@ class TempPairedDataset(PairedDataset):
                 "target_pose" : seq_info.views[idx].pose.cpu().detach().numpy(),
                 "target_focal" : seq_info.views[idx].focal,
                 "warped_image" : warped_image, # (H, W, 3) numpy
-                "warped_mask" : seq_info.views[idx].mask, # (1, 1, H, W)
+                "warped_mask" : warped_mask, # (H, W, 1) numpy
             }
 
             if self.pose_cond == "warp_plus_coords":
@@ -272,10 +275,25 @@ class TempPairedDataset(PairedDataset):
                 high_warped_depth = Image.fromarray(self.paired_images[idx]["warped_image"])
                 warped_depth = resize_with_padding(high_warped_depth, int(self.target_res) // 8, black=False) /127.5-1.0 
                 high_warped_depth = resize_with_padding(high_warped_depth, int(self.target_res), black=False) /127.5-1.0 
+
+                if self.pose_cond == 'warp_plus_mask':
+                    high_warped_mask = Image.fromarray(self.paired_images[idx]["warped_mask"][:,:,0])
+                    warped_mask = resize_with_padding(high_warped_mask, int(self.target_res) // 8, black=False) /127.5-1.0
+                    high_warped_mask = resize_with_padding(high_warped_mask, int(self.target_res), black=False) /127.5-1.0
+
+                    # combine depth and mask -> (H/8, W/8, 4)
+                    warped_depth = np.concatenate([warped_depth, warped_mask[:,:,0:1]], axis=2)
+                    high_warped_depth = np.concatenate([high_warped_depth, high_warped_mask[:,:,0:1]], axis=2)
+                                                       
             except Exception as error:
                 print("exception when loading warped depth:", error)
-                high_warped_depth = np.zeros((int(self.target_res),int(self.target_res),3)) -1.0
-                warped_depth = np.zeros((int(self.target_res) // 8, int(self.target_res) // 8, 3)) -1.0
+
+                if self.pose_cond == 'warp_plus_mask':
+                    warped_depth = np.zeros((int(self.target_res) // 8, int(self.target_res) // 8, 4)) -1.0
+                    high_warped_depth = np.zeros((int(self.target_res),int(self.target_res),4)) -1.0
+                else:
+                    warped_depth = np.zeros((int(self.target_res) // 8, int(self.target_res) // 8, 3)) -1.0
+                    high_warped_depth = np.zeros((int(self.target_res),int(self.target_res),3)) -1.0
 
         dict1_extrinsics = self.paired_images[idx]['target_pose']
         dict2_extrinsics = self.paired_images[idx]['reference_pose']
@@ -366,6 +384,9 @@ class LoraPairedDataset(TempPairedDataset):
             warped_image = (seq_info.views[idx].warped.cpu().detach().numpy() + 1) * 127.5
             warped_image = np.transpose(warped_image[0], (1,2,0)).astype(np.uint8)
 
+            warped_mask = (seq_info.views[idx].mask.cpu().detach().numpy()) * 255
+            warped_mask = np.transpose(warped_mask[0], (1,2,0)).astype(np.uint8)
+
             paired_data = {
                 "reference_idx" : reference_idx,
                 "reference_pose" : seq_info.views[reference_idx].pose.cpu().detach().numpy(),
@@ -376,7 +397,7 @@ class LoraPairedDataset(TempPairedDataset):
                 "target_focal" : seq_info.views[idx].focal,
                 "target_image" : target_image, # (H, W, 3) numpy
                 "warped_image" : warped_image, # (H, W, 3) numpy
-                "warped_mask" : seq_info.views[idx].mask, # (1, 1, H, W)
+                "warped_mask" : warped_mask, # (H, W, 1) numpy
             }
 
             if self.pose_cond == "warp_plus_coords":
@@ -411,10 +432,25 @@ class LoraPairedDataset(TempPairedDataset):
                 high_warped_depth = Image.fromarray(self.paired_images[idx]["warped_image"])
                 warped_depth = resize_with_padding(high_warped_depth, int(self.target_res) // 8, black=False) /127.5-1.0 
                 high_warped_depth = resize_with_padding(high_warped_depth, int(self.target_res), black=False) /127.5-1.0 
+
+                if self.pose_cond == 'warp_plus_mask':
+                    high_warped_mask = Image.fromarray(self.paired_images[idx]["warped_mask"][:,:,0])
+                    warped_mask = resize_with_padding(high_warped_mask, int(self.target_res) // 8, black=False) /127.5-1.0
+                    high_warped_mask = resize_with_padding(high_warped_mask, int(self.target_res), black=False) /127.5-1.0
+
+                    # combine depth and mask -> (H/8, W/8, 4)
+                    warped_depth = np.concatenate([warped_depth, warped_mask[:,:,0:1]], axis=2)
+                    high_warped_depth = np.concatenate([high_warped_depth, high_warped_mask[:,:,0:1]], axis=2)
+
             except Exception as error:
                 print("exception when loading warped depth:", error)
-                high_warped_depth = np.zeros((int(self.target_res),int(self.target_res),3)) -1.0
-                warped_depth = np.zeros((int(self.target_res) // 8, int(self.target_res) // 8, 3)) -1.0
+
+                if self.pose_cond == 'warp_plus_mask':
+                    warped_depth = np.zeros((int(self.target_res) // 8, int(self.target_res) // 8, 4)) -1.0
+                    high_warped_depth = np.zeros((int(self.target_res),int(self.target_res),4)) -1.0
+                else:
+                    warped_depth = np.zeros((int(self.target_res) // 8, int(self.target_res) // 8, 3)) -1.0
+                    high_warped_depth = np.zeros((int(self.target_res),int(self.target_res),3)) -1.0
 
         dict1_extrinsics = self.paired_images[idx]['target_pose']
         dict2_extrinsics = self.paired_images[idx]['reference_pose']

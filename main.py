@@ -27,7 +27,7 @@ def main(args, device):
 
     recon_model = load_recon_model(args.use_mast3r, device)
 
-    gen_model = load_gen_model(args.output_dir, args.model_dir, args.model_iteration, device)
+    gen_model = load_gen_model(args.output_dir, args.cond, args.model_dir, args.model_iteration, device)
 
     image_paths, images, extrinsics, intrinsics, trajectory, reference = get_inputs(args.input_dir, device)
 
@@ -46,9 +46,9 @@ def main(args, device):
         print("Stage", seq_info.cur_stage)
         known_area_ratio = warp_reference(seq_info)
         if i == 0:
-            gen_model = train_lora(gen_model, seq_info)
+            gen_model = train_lora(gen_model, args.cond, seq_info)
         generate_idx = choose_idx_to_generate(seq_info, known_area_ratio)
-        generate_images(gen_model, seq_info, generate_idx)
+        generate_images(gen_model, args.cond, seq_info, generate_idx)
         if i < seq_info.required_stage - 1:
             recon_3d_incremental(recon_model, device, seq_info, generate_idx, args.use_mast3r)
         seq_info.cur_stage += 1
@@ -63,6 +63,7 @@ if __name__ == "__main__":
     arg_parser.add_argument("--use_mast3r", "-m", action="store_true")
     arg_parser.add_argument("--model_dir", "-c", type=str)
     arg_parser.add_argument("--model_iteration", "-it", default=None, type=int)
+    arg_parser.add_argument("--cond", "-co", default="warp_plus_pose", type=str)
     args = arg_parser.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"

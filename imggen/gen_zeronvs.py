@@ -20,8 +20,8 @@ from ldm.util import instantiate_from_config
 from ldm.logger import ImageLogger
 from dataloader import TempPairedDataset
 
-def load_gen_model(output_dir, model_dir, model_iteration, device):
-    config_file = yaml.safe_load(open("imggen/megascenes/configs/warp_plus_pose/config.yaml"))
+def load_gen_model(output_dir, pose_cond, model_dir, model_iteration, device):
+    config_file = yaml.safe_load(open(f"imggen/megascenes/configs/{pose_cond}/config.yaml"))
     train_configs = config_file.get('training', {})
     model = instantiate_from_config(config_file['model']).eval()
     img_logger = ImageLogger(log_directory=output_dir, log_images_kwargs=train_configs['log_images_kwargs'])
@@ -167,7 +167,7 @@ def choose_idx_to_generate(seq_info, known_area_ratio):
         print(f"  {idx} -> {known_area_ratio[idx]}")
     return generate_idx
 
-def generate_images(gen_model, seq_info, generate_idx):
+def generate_images(gen_model, pose_cond, seq_info, generate_idx):
     # accelerator = gen_model["accelerator"]
     model = gen_model["model"]
     img_logger = gen_model["img_logger"]
@@ -179,7 +179,7 @@ def generate_images(gen_model, seq_info, generate_idx):
     os.makedirs(os.path.join(savepath, 'refimgs'), exist_ok=True)
     os.makedirs(os.path.join(savepath, 'masks'), exist_ok=True)
 
-    dataset = TempPairedDataset(seq_info, generate_idx)
+    dataset = TempPairedDataset(seq_info, generate_idx, pose_cond = pose_cond)
     dataloader = DataLoader(
         dataset, batch_size=1, num_workers=4,
         drop_last=False, shuffle=False, persistent_workers=False, pin_memory=False
