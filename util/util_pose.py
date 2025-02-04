@@ -183,6 +183,15 @@ def generate_smooth_camera_path(R1, T1, R2, T2, N):
     print("pseudo_gap_1: ", pseudo_gap_1)
     print("pseudo_gap_2: ", pseudo_gap_2)
 
+    if pseudo_gap_1 > pseudo_gap_2:
+        if pseudo_gap_1 - pseudo_gap_2 > np.pi:
+            pseudo_gap_2 += 2 * np.pi
+    else:
+        if pseudo_gap_2 - pseudo_gap_1 > np.pi:
+            pseudo_gap_1 += 2 * np.pi
+    print("adjusted pseudo_gap_1: ", pseudo_gap_1)
+    print("adjusted pseudo_gap_2: ", pseudo_gap_2)
+
     positions = []
     rotations = []
 
