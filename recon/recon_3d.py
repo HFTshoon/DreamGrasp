@@ -48,6 +48,9 @@ def recon_3d_init(recon_model, device, image_paths, extrinsics, intrinsics, inpu
 
     if extrinsics is not None:
         scene.preset_pose(extrinsics)
+        scene_init = "mst" # "known_poses"
+    else:
+        scene_init = "mst"
 
     if intrinsics is not None:
         scene.preset_focal(intrinsics["focals"])
@@ -55,7 +58,7 @@ def recon_3d_init(recon_model, device, image_paths, extrinsics, intrinsics, inpu
     else:
         scene.preset_principal_point_zero()
 
-    loss = scene.compute_global_alignment(init="known_poses", niter=300, schedule="cosine", lr=0.01)
+    loss = scene.compute_global_alignment(init=scene_init, niter=300, schedule="cosine", lr=0.01)
     
     # (H,W) = (512, 512) if square_ok=True, (384, 512) if square_ok=False
     pts3d = scene.get_pts3d()               # B X (H, W, 3)
@@ -84,7 +87,7 @@ def recon_3d_init(recon_model, device, image_paths, extrinsics, intrinsics, inpu
 
     if intrinsics is None:
         intrinsics = {
-            "focals": focals,
+            "focals": [focal[0] for focal in focals.detach().cpu().numpy().tolist()],
             "principal_points": pps
         }
         print("Intrinsics do not exist. Will save the recon model output.")
@@ -148,6 +151,7 @@ def recon_3d_incremental(recon_model, device, seq_info, generate_idx, use_mast3r
     scene.preset_principal_point(input_pps)
     scene.preset_depthmap(depthmaps, depthmap_msk)
 
+    # "mst" works better than "known_poses" for some reasons...
     loss = scene.compute_global_alignment(init="mst", niter=300, schedule="cosine", lr=0.01)
     
     # (H,W) = (512, 512) if square_ok=True, (384, 512) if square_ok=False

@@ -15,7 +15,7 @@ from ldm.logger import ImageLogger
 
 from minlora import get_lora_state_dict
 
-def train_lora(gen_model, seq_info):
+def train_lora(gen_model, pose_cond, seq_info):
     config_dir = "imggen/megascenes/configs/warp_plus_pose"
     batch_size = 1
     workers = 4
@@ -27,7 +27,7 @@ def train_lora(gen_model, seq_info):
 
     os.makedirs(exp_dir, exist_ok=True)
 
-    dataset = LoraPairedDataset(seq_info)
+    dataset = LoraPairedDataset(seq_info, pose_cond = pose_cond)
 
     print("size of dataset: ", len(dataset))
     dataloader = DataLoader(
@@ -42,7 +42,8 @@ def train_lora(gen_model, seq_info):
     model.train()
     model.learning_rate = float(train_configs.get('learning_rate', 1e-4))
     
-    total_iterations = 100
+    log_freq = 100
+    total_iterations = 500
     optimizer, scheduler = model.configure_optimizers(use_lora=True)
 
     # accelerator = gen_model["accelerator"]
@@ -60,9 +61,9 @@ def train_lora(gen_model, seq_info):
     while True:
         progress_bar.set_description(f"Training step {global_step}")
         for _, batch in enumerate(dataloader):
-            if local_step == 0: # log image in the beginning for sanity check and comparisons
+            if local_step == 0 or local_step % log_freq == 0 : # log image in the beginning for sanity check and comparisons
                 grid = img_logger.log_img(module, batch, global_step, split='test', returngrid='train', has_target=True)
-                
+
             loss, loss_dict = model(batch)
             progress_bar.set_postfix(loss_dict)
 
@@ -82,7 +83,6 @@ def train_lora(gen_model, seq_info):
                 lora_state_dict = get_lora_state_dict(model)
                 # save lora state dict
                 torch.save(lora_state_dict, os.path.join(exp_dir, "lora_state_dict.pth"))
-                breakpoint()
                 print("Training complete!")
                 model.eval()
                 gen_model["model"] = model
