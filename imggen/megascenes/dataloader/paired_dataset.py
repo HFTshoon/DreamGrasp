@@ -20,6 +20,7 @@ import sys
 HERE_PATH = os.path.normpath(os.path.dirname(__file__))
 MAIN_REPO_PATH = os.path.normpath(os.path.join(HERE_PATH, '../../../'))
 sys.path.append(MAIN_REPO_PATH)
+from util.util_pose import get_cameras_origin, get_angle_between_pair_cameras
 from util.util_preprocess import make_pts3d
 from util.util_warp import compute_optical_flow, get_warped_coords
 
@@ -37,10 +38,10 @@ class PairedDataset(Dataset):
         random.seed(42)
         self.data_dir = data_dir
         if category is not None:
-            with open(os.path.join(data_dir, f'paired_data_{split}.json'), 'r') as f:
+            with open(os.path.join(data_dir, f'refined_paired_data_{split}.json'), 'r') as f:
                 paired_images = json.load(f)[category]
         else:
-            with open(os.path.join(data_dir, f'paired_data_{split}.json'), 'r') as f:
+            with open(os.path.join(data_dir, f'refined_paired_data_{split}.json'), 'r') as f:
                 paired_images_json = json.load(f)
             categories = paired_images_json.keys()
             paired_images = []
@@ -63,13 +64,34 @@ class PairedDataset(Dataset):
         warped_image_path = self.paired_images[idx]['warped_image_path']
         warped_mask_path = self.paired_images[idx]['warped_mask_path']
 
-        # get ref image from ref_idx_list (randomly)
-        ref_idx_idx = random.randint(0, len(ref_idx_list)-1)
-        ref_idx = ref_idx_list[ref_idx_idx]
-        ref_image_num = ref_image_num_list[ref_idx_idx]
+        if 'original_split' in self.paired_images[idx]:
+            split = self.paired_images[idx]['original_split']        
+        else:
+            split = self.split
 
-        pose_info = np.load(os.path.join(self.data_dir, category, seq_name, f"poses_{self.split}.npy"), allow_pickle=True)
-        focal_info = np.load(os.path.join(self.data_dir, category, seq_name, f"focals_{self.split}.npy"), allow_pickle=True)
+        pose_info = np.load(os.path.join(self.data_dir, category, seq_name, f"poses_{split}.npy"), allow_pickle=True)
+        focal_info = np.load(os.path.join(self.data_dir, category, seq_name, f"focals_{split}.npy"), allow_pickle=True)
+
+        # get ref image from ref_idx_list (randomly)
+        # ref_idx_idx = random.randint(0, len(ref_idx_list)-1)
+        # ref_idx = ref_idx_list[ref_idx_idx]
+        # ref_image_num = ref_image_num_list[ref_idx_idx]
+
+        # get ref image from ref_idx_list (closest to query image)
+        try:
+            query_poses = [pose_info[query_idx]]
+            ref_poses = [pose_info[ref_idx] for ref_idx in ref_idx_list]
+            Rs = [pose[:3, :3] for pose in query_poses + ref_poses]
+            Ts = [pose[:3, 3] for pose in query_poses + ref_poses]
+            P = get_cameras_origin(Rs, Ts)
+            angles = [get_angle_between_pair_cameras(Ts[0], Ts[i], P) for i in range(1, len(Ts))]
+            ref_idx = ref_idx_list[np.argmin(angles)]
+            ref_image_num = ref_image_num_list[np.argmin(angles)]
+        except Exception as error:
+            print("exception when getting ref image:", error)
+            ref_idx_idx = random.randint(0, len(ref_idx_list)-1)
+            ref_idx = ref_idx_list[ref_idx_idx]
+            ref_image_num = ref_image_num_list[ref_idx_idx]
 
         try:
             path1 = os.path.join(self.data_dir, category, seq_name, "images", "frame%06d.jpg" % query_image_num)
@@ -137,10 +159,10 @@ class PairedDataset(Dataset):
         rel_pose = torch.cat([rel_pose, fov_enc]).float()
 
         if self.pose_cond in ["warp_plus_coords"]:
-            pps_info = np.load(os.path.join(self.data_dir, category, seq_name, f"pps_{self.split}.npy"), allow_pickle=True)
+            pps_info = np.load(os.path.join(self.data_dir, category, seq_name, f"pps_{split}.npy"), allow_pickle=True)
             
             image_cnt = len(pose_info)
-            depthmaps_info = np.load(os.path.join(self.data_dir, category, seq_name, f'depthmaps_{self.split}.npy'))
+            depthmaps_info = np.load(os.path.join(self.data_dir, category, seq_name, f'depthmaps_{split}.npy'))
             depthmaps_info = depthmaps_info[:image_cnt, :, :]
             pts3d = make_pts3d(depthmaps_info, pose_info, focal_info, pps_info)
             h, w = depthmaps_info[0].shape
@@ -219,10 +241,21 @@ class TempPairedDataset(PairedDataset):
 
         paired_images = []
         for idx in generate_idx:
-            overlaps = seq_info.views[idx].overlaps
-            # get biggest overlap
-            reference_idx = overlaps.index(max(overlaps))
-            print(f"Generate image {idx} from reference {reference_idx} ({overlaps[reference_idx]})")
+            # get smallest azimuth
+            pair_angles_from_query = seq_info.pair_angles[idx]
+            reference_idx_candidates = []
+            for i in range(len(pair_angles_from_query)):
+                if seq_info.views[i].stage != -1:
+                    reference_idx_candidates.append((i, pair_angles_from_query[i]))
+            reference_idx_candidates = sorted(reference_idx_candidates, key=lambda x: x[1])
+            reference_idx = reference_idx_candidates[0][0]
+            print(f"Generate image {idx} from reference {reference_idx} ({pair_angles_from_query[reference_idx]})")
+
+            # # get biggest overlap
+            # overlaps = seq_info.views[idx].overlaps
+            # reference_idx = overlaps.index(max(overlaps))
+            # print(f"Generate image {idx} from reference {reference_idx} ({overlaps[reference_idx]})")
+
             ref_image = (seq_info.views[reference_idx].image.cpu().detach().numpy() + 1) * 127.5
             ref_image = ref_image.astype(np.uint8)
 
