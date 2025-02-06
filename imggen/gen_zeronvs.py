@@ -93,7 +93,7 @@ def load_gen_model(output_dir, pose_cond, model_dir, model_iteration, device):
 def choose_idx_to_generate(seq_info, known_area_ratio):
     generate_cnt = min(2 ** seq_info.cur_stage, seq_info.target_poses_cnt - seq_info.generated_poses_cnt)
     min_known_area_ratio = 0.5
-    max_azimuth_diff = np.pi / 4
+    max_azimuth_diff = np.pi / 6
 
     # get lowest known area ratio that is greater than min_known_area_ratio
     candidates = [(i, known_area_ratio[i]) for i in range(seq_info.length) if known_area_ratio[i] >= min_known_area_ratio and seq_info.views[i].stage == -1]

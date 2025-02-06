@@ -44,8 +44,8 @@ def main():
     model.train()
     model.learning_rate = float(train_configs.get('learning_rate', 1e-4))
     gradient_accumulation_steps = train_configs.get('gradient_accumulation_steps', 1)
-    log_freq = 500
-    save_freq = log_freq*20
+    log_freq = 2500
+    save_freq = log_freq*4
     total_iterations = 150000
     optimizer, scheduler = model.configure_optimizers()
 

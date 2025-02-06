@@ -32,21 +32,9 @@ def main():
     # load data
     config_file = yaml.safe_load(open(os.path.join(args.cfg_dir, 'config.yaml')))
     train_configs = config_file.get('training', {})
-    dataset_name = args.dataset 
-    if dataset_name == 'dtu':
-        dataset = DTUDataset(pose_cond=train_configs['pose_cond'])
-    elif dataset_name == 're10k':
-        dataset = Re10kDataset(pose_cond=train_configs['pose_cond'])
-    elif dataset_name == 'mipnerf':
-        dataset = MipnerfDataset(pose_cond=train_configs['pose_cond'])
-    elif dataset_name == 'megascenes':
-        dataset = PairedDataset(pose_cond=train_configs['pose_cond'], split='test', data_dir=args.dataset_dir, category=args.category)
-    else:
-        print("check dataset")
-        exit()
-
+    
+    dataset = PairedDataset(pose_cond=train_configs['pose_cond'], split='test', data_dir=args.dataset_dir, category=args.category)
     print("size of dataset: ", len(dataset))
-
     dataloader = DataLoader(
         dataset, batch_size=args.batch_size, num_workers=args.workers,
         drop_last=False, shuffle=False, persistent_workers=False, pin_memory=False

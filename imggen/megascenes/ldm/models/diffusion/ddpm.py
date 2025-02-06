@@ -804,6 +804,22 @@ class LatentDiffusion(DDPM):
         if warped_coords is not None:
             warped_coords = super().get_input(batch, 'warped_coords').to(self.device)
 
+        additional_ref_images = batch.get('additional_ref_images', None)
+        if additional_ref_images is not None:
+            if len(additional_ref_images) == 0:
+                additional_ref_images = None
+            additional_ref_images = rearrange(additional_ref_images, 'b k h w c -> b k c h w')
+            additional_ref_images = additional_ref_images.to(memory_format=torch.contiguous_format).float()
+            additional_ref_images = additional_ref_images.to(self.device)
+
+        # def get_input(self, batch, k):
+        # x = batch[k]
+        # if len(x.shape) == 3:
+        #     x = x[..., None]
+        # x = rearrange(x, 'b h w c -> b c h w')
+        # x = x.to(memory_format=torch.contiguous_format).float()
+        # return x
+
         pc_motion = batch.get('motion', None)
         if pc_motion is not None:
             pc_motion = pc_motion.float().to(self.device)
@@ -859,8 +875,17 @@ class LatentDiffusion(DDPM):
             else:
                 cond["c_crossattn"] = [clip_emb]
         elif hasattr(self.cond_stage_model, 'preprocess'): # image encoder
-            clip_emb = self.get_learned_conditioning(ref_image).detach()
+            clip_emb = self.get_learned_conditioning(ref_image).detach() # (1, 1, 768)
             #clip_emb = self.get_learned_conditioning([""]).detach().repeat(x.shape[0],1,1)
+            
+            if additional_ref_images is not None:
+                additional_ref_images = self.get_learned_conditioning(additional_ref_images[0]).detach() # (k, 1, 768)
+
+                cos = nn.CosineSimilarity(dim=2, eps=1e-6)
+                cos_sim = cos(clip_emb, additional_ref_images).cpu().numpy()
+                print(f"cosine similarity between target and reference images: {[round(x[0], 2) for x in cos_sim]}")
+
+                clip_emb = torch.mean(torch.vstack([clip_emb, additional_ref_images]), dim=0).unsqueeze(0)
 
             null_prompt = self.get_learned_conditioning([""]).detach() # returns zeros
             clip_emb_guide = torch.where(prompt_mask, null_prompt, clip_emb) if split == 'train' else clip_emb
