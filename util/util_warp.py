@@ -34,7 +34,7 @@ def project_points(P, R, T, K):
     
     return pts_2d, depth
 
-def compute_optical_flow(P, R_source, T_source, K_source, R_query, T_query, K_query):
+def compute_optical_flow(P, R_source, T_source, K_source, R_query, T_query, K_query, N_source=None):
     """
     소스 뷰에서 쿼리 뷰로의 Optical Flow를 계산합니다.
     
@@ -45,6 +45,7 @@ def compute_optical_flow(P, R_source, T_source, K_source, R_query, T_query, K_qu
     - R_query: (3, 3) 쿼리 뷰의 회전 행렬
     - T_query: (3,) 쿼리 뷰의 이동 벡터
     - K: (3, 3) 카메라 내부 파라미터 행렬
+    - N_source: (N, 3) 소스 뷰의 법선 벡터
     
     Returns:
     - flow: (N, 2) Optical Flow (dx, dy)
@@ -55,16 +56,15 @@ def compute_optical_flow(P, R_source, T_source, K_source, R_query, T_query, K_qu
     # 쿼리 뷰에서의 2D 투영
     pts_query, depth_query = project_points(P, R_query, T_query, K_query)  # (N, 2)
     
-    # pts_source_numpy = pts_source.detach().cpu().numpy()
-    # pts_query_numpy = pts_query.detach().cpu().numpy()
-    # for i in range(10):
-    #     x = round(pts_source_numpy[i][0],2)
-    #     y = round(pts_source_numpy[i][1],2)
-    #     target_x = i
-    #     target_y = 0
-    #     print(f"Projection : {x}, {y} -> {target_x}, {target_y}")
-    #     if abs(x - target_x) > 5 or abs(y - target_y) > 5:
-    #         print(f"Projection warning! : {x}, {y} -> {target_x}, {target_y}")
+    pts_source_numpy = pts_source.detach().cpu().numpy()
+    for i in range(10):
+        x = round(pts_source_numpy[i][0],2)
+        y = round(pts_source_numpy[i][1],2)
+        target_x = i
+        target_y = 0
+        # print(f"Projection : {x}, {y} -> {target_x}, {target_y}")
+        if abs(x - target_x) > 5 or abs(y - target_y) > 5:
+            print(f"Projection warning! : {x}, {y} -> {target_x}, {target_y}")
 
     # idx = np.random.choice(len(pts_source_numpy), 10, replace=False)
     # for i in idx:
@@ -72,7 +72,20 @@ def compute_optical_flow(P, R_source, T_source, K_source, R_query, T_query, K_qu
 
     # Optical Flow 계산
     flow = pts_query - pts_source  # (N, 2)
+
+    flow_outlier_value = 1e4
+    depth_outlier_value = 1e4
+    depth_is_minus = depth_query < 0
+    flow[depth_is_minus, :] = flow_outlier_value
+    depth_query[depth_is_minus] = depth_outlier_value
     
+    # filter points that N_source is negative cosine similarity with P-T_query
+    cam2point = P - T_query
+    cam2point = cam2point / torch.norm(cam2point, dim=1, keepdim=True)
+    cos_similarity = (N_source * cam2point).sum(dim=1)
+    flow[cos_similarity > 0] = flow_outlier_value
+    depth_query[cos_similarity > 0] = depth_outlier_value
+
     return flow, depth_query
 
 def get_warped_coords(coords, flow, depth):
