@@ -29,7 +29,7 @@ def main():
 
     os.makedirs(args.exp_dir, exist_ok=True)
 
-    dataset = PairedDataset(pose_cond=train_configs['pose_cond'], split='train', data_dir=args.dataset_dir, category=args.category)
+    dataset = PairedDatasetRefine(pose_cond=train_configs['pose_cond'], split='train', data_dir=args.dataset_dir, category=args.category)
     print("size of dataset: ", len(dataset))
     dataloader = DataLoader(
         dataset, batch_size=args.batch_size, num_workers=args.workers,
